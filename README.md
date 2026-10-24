@@ -56,9 +56,10 @@ A high-performance, mobile-optimized 3D endless horse runner game built with **T
 
 - **Headless Raspberry Pi Hub & Smartphone Companion Remote**:
   - Centralized headless Python game hub (`scripts/sensor_bridge.py`) coordinating large-screen TV displays (NVIDIA Shield / Android TV / Smart TV / Desktop browser), physical balance board motion sensors, and smartphone remotes.
-  - Built-in HTTP server directly serving the mobile **Companion Remote App** (`public/remote.html`) on `http://<pi-ip>:8080/remote`.
+  - Built-in HTTP server directly serving the compiled 3D game and mobile **Companion Remote App** (`public/remote.html`) on port 8080.
   - Real-time Balance Board **Tare / Zero neutral** calibration and sensitivity tuning with live Bubble Level visual tilt feedback.
   - Persistent room state and Top-10 Leaderboard (`scripts/leaderboard.json`) with active rider profiles and difficulty presets.
+  - **Docker & Compose Deployment**: Multi-stage build (`node:20-alpine` builder + `python:3.11-slim` runtime) hosting the full 3D game bundle, smartphone remote (`/remote`), WebSocket hub, 50 Hz UDP receiver, and volume-mounted persistent data (`./data/leaderboard.json`) on port 8080.
 
 ---
 
@@ -220,6 +221,56 @@ A built-in **350ms staleness timeout** ensures steering automatically resets to 
 
 ---
 
+## 🐳 Docker Deployment (Raspberry Pi / Home Server)
+
+Endless Ride includes a production-ready **multi-stage Docker build** and `docker-compose.yml` that packages the entire stack—the compiled 3D WebGL game (`dist/`), the Smartphone Companion Remote (`/remote`), the WebSocket room & telemetry hub, and the 50 Hz AtomS3 UDP receiver—into a single container on port `8080`.
+
+### 1. Start with Docker Compose
+
+On your Raspberry Pi, NVIDIA Shield (Linux), or home server:
+
+```bash
+# Clone the repository
+git clone <repo-url>
+cd EndlessRide
+
+# Build and start the container in the background
+docker compose up -d --build
+```
+
+### 2. Connect Your Devices
+
+Once the container is running:
+
+| Device | Role | URL / Endpoint |
+| :--- | :--- | :--- |
+| **TV / NVIDIA Shield / PC** | Main 3D WebGL Game | `http://<pi-ip>:8080/` |
+| **Smartphone** | Companion Remote & Leaderboard | `http://<pi-ip>:8080/remote` |
+| **M5Stack AtomS3 Reins** | Wireless UDP Tilt Controller | Destination IP: `<pi-ip>`, Port: `8080` (UDP) |
+
+> **Note**: Both the browser game and the smartphone remote automatically connect to the local hub over WebSocket at `ws://<pi-ip>:8080`.
+
+### 3. Persistent Leaderboard & Configuration
+
+- Leaderboard scores, player profiles, and room settings are automatically persisted to `./data/leaderboard.json` on the host via Docker volume (`./data:/app/data`).
+- The `LEADERBOARD_FILE` environment variable allows overriding the path if needed.
+
+### 4. Optional: Wired I2C MPU-6050 Accelerometer
+
+If you are using a wired MPU-6050 sensor connected directly to the Raspberry Pi GPIO pins (I2C Bus 1), uncomment the device mapping in `docker-compose.yml`:
+
+```yaml
+    devices:
+      - "/dev/i2c-1:/dev/i2c-1"
+```
+
+Then restart the container:
+```bash
+docker compose up -d
+```
+
+---
+
 ## 🎨 Custom 3D Model Parameters
 
 You can load custom glTF / GLB 3D assets at runtime using URL query parameters:
@@ -245,6 +296,9 @@ If no model parameter is provided or an asset cannot be loaded, Endless Ride smo
 
 ```
 EndlessRide/
+├── Dockerfile                   # Multi-stage container build (Node builder + Python runtime)
+├── docker-compose.yml           # Single-command Docker Compose stack with volume mount
+├── .dockerignore                # Build context optimizations
 ├── index.html                   # HTML entry point, HUD overlays & gameover modal
 ├── package.json                 # Project dependencies & build scripts
 ├── tsconfig.json                # Strict TypeScript configuration

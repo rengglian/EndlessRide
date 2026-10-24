@@ -26,6 +26,8 @@ import argparse
 import struct
 import time
 import http
+import urllib.parse
+import mimetypes
 
 try:
     import websockets
@@ -54,7 +56,69 @@ PACKET_FORMAT = "<HBBf" # uint16 magic (2B), uint8 seq (1B), uint8 restart (1B),
 PACKET_SIZE = struct.calcsize(PACKET_FORMAT)
 
 # Persistent State File
-STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "leaderboard.json")
+STATE_FILE = os.environ.get(
+    "LEADERBOARD_FILE",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "leaderboard.json")
+)
+
+# Static file paths for HTTP serving
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DIST_DIR = os.path.join(REPO_ROOT, "dist")
+PUBLIC_DIR = os.path.join(REPO_ROOT, "public")
+
+MIME_MAP = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".mjs": "application/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".gltf": "application/json; charset=utf-8",
+    ".glb": "application/octet-stream",
+    ".bin": "application/octet-stream",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".ico": "image/x-icon",
+    ".wasm": "application/wasm",
+    ".txt": "text/plain; charset=utf-8",
+}
+
+def get_content_type(file_path):
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext in MIME_MAP:
+        return MIME_MAP[ext]
+    guessed, _ = mimetypes.guess_type(file_path)
+    return guessed or "application/octet-stream"
+
+def find_static_file(clean_path):
+    """
+    Locates static file in dist/ first, falling back to public/ or repo root.
+    Enforces path traversal protection.
+    """
+    rel_path = clean_path.lstrip("/")
+
+    # Search candidates in priority order:
+    # 1. dist/ (production build)
+    # 2. public/ (source assets and remote.html)
+    # 3. repo root (index.html if unbundled)
+    search_dirs = [DIST_DIR, PUBLIC_DIR]
+    if rel_path == "index.html":
+        search_dirs.append(REPO_ROOT)
+
+    for base_dir in search_dirs:
+        if not os.path.isdir(base_dir):
+            continue
+        candidate = os.path.join(base_dir, rel_path)
+        real_base = os.path.realpath(base_dir)
+        real_candidate = os.path.realpath(candidate)
+
+        # Ensure target is within base_dir and is a regular file
+        if (real_candidate == real_base or real_candidate.startswith(real_base + os.sep)) and os.path.isfile(real_candidate):
+            return real_candidate
+
+    return None
 
 DEFAULT_STATE = {
     "playerName": "Rider 1",
@@ -90,6 +154,7 @@ def load_state():
 
 def save_state():
     try:
+        os.makedirs(os.path.dirname(os.path.abspath(STATE_FILE)), exist_ok=True)
         with open(STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=2)
     except Exception as e:
@@ -345,52 +410,113 @@ async def handle_client(websocket):
 
 def process_http_request(*args, **kwargs):
     """
-    HTTP convenience handler serving /remote or /remote.html directly on port 8080.
-    Supports both legacy (path, request_headers) and modern (connection, request) signatures.
+    HTTP request processor for websockets.serve on port 8080.
+    1. Distinguishes WebSocket upgrade requests (Upgrade: websocket) and returns None
+       so websockets can complete the WebSocket handshake.
+    2. For regular HTTP requests:
+       - Maps / -> /index.html (3D WebGL Game)
+       - Maps /remote -> /remote.html (Smartphone Companion Remote)
+       - Serves static assets from dist/ (or public/) with correct MIME types.
+       - Returns 404 Not Found if file does not exist.
+    Supports both legacy (path, request_headers) and modern (connection, request) websockets signatures.
     """
     try:
         path = None
+        request_headers = None
         connection = None
         request = None
 
         if len(args) >= 2:
             arg0, arg1 = args[0], args[1]
             if isinstance(arg0, str):
+                # Legacy websockets <= 12: (path, request_headers)
                 path = arg0
+                request_headers = arg1
             elif hasattr(arg1, "path"):
+                # Modern websockets >= 13: (connection, request)
                 connection = arg0
                 request = arg1
                 path = getattr(request, "path", None)
+                request_headers = getattr(request, "headers", None)
             elif hasattr(arg0, "path"):
-                path = getattr(arg0, "path", None)
+                request = arg0
+                path = getattr(request, "path", None)
+                request_headers = getattr(request, "headers", None)
+        elif len(args) == 1:
+            arg0 = args[0]
+            if isinstance(arg0, str):
+                path = arg0
+            elif hasattr(arg0, "path"):
+                request = arg0
+                path = getattr(request, "path", None)
+                request_headers = getattr(request, "headers", None)
 
         if not path and "path" in kwargs:
             path = kwargs["path"]
+        if not request_headers and "request_headers" in kwargs:
+            request_headers = kwargs["request_headers"]
+        elif not request_headers and "headers" in kwargs:
+            request_headers = kwargs["headers"]
 
-        if path:
-            raw_path = path.split("?")[0].rstrip("/")
-            if raw_path in ("/remote", "/remote.html"):
-                html_path = os.path.join(
-                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                    "public",
-                    "remote.html"
-                )
-                if os.path.exists(html_path):
-                    with open(html_path, "rb") as f:
-                        body = f.read()
-                    headers = [
-                        ("Content-Type", "text/html; charset=utf-8"),
-                        ("Content-Length", str(len(body))),
-                        ("Connection", "close"),
-                        ("Access-Control-Allow-Origin", "*")
-                    ]
-                    if connection and hasattr(connection, "respond"):
+        # Check for WebSocket Upgrade header: if present, hand off to WebSocket handshake
+        upgrade = ""
+        if hasattr(request_headers, "get"):
+            upgrade = request_headers.get("Upgrade") or request_headers.get("upgrade") or ""
+        elif isinstance(request_headers, (list, tuple)):
+            for k, v in request_headers:
+                if str(k).lower() == "upgrade":
+                    upgrade = v
+                    break
+
+        if str(upgrade).lower() == "websocket":
+            return None
+
+        # Handle regular HTTP GET/HEAD requests
+        if path is not None:
+            clean_path = urllib.parse.unquote(path.split("?")[0])
+            if clean_path in ("", "/"):
+                clean_path = "/index.html"
+            elif clean_path in ("/remote", "/remote/"):
+                clean_path = "/remote.html"
+
+            target_file = find_static_file(clean_path)
+
+            if target_file and os.path.isfile(target_file):
+                content_type = get_content_type(target_file)
+                with open(target_file, "rb") as f:
+                    body = f.read()
+
+                headers = [
+                    ("Content-Type", content_type),
+                    ("Content-Length", str(len(body))),
+                    ("Connection", "close"),
+                    ("Access-Control-Allow-Origin", "*")
+                ]
+
+                if connection and hasattr(connection, "respond"):
+                    try:
+                        return connection.respond(http.HTTPStatus.OK, body, headers=headers)
+                    except TypeError:
                         return connection.respond(http.HTTPStatus.OK, body)
-                    return (http.HTTPStatus.OK, headers, body)
+                return (http.HTTPStatus.OK, headers, body)
+            else:
+                body = b"404 Not Found\n"
+                headers = [
+                    ("Content-Type", "text/plain; charset=utf-8"),
+                    ("Content-Length", str(len(body))),
+                    ("Connection", "close")
+                ]
+                if connection and hasattr(connection, "respond"):
+                    try:
+                        return connection.respond(http.HTTPStatus.NOT_FOUND, body, headers=headers)
+                    except TypeError:
+                        return connection.respond(http.HTTPStatus.NOT_FOUND, body)
+                return (http.HTTPStatus.NOT_FOUND, headers, body)
+
     except Exception as e:
         print(f"[HTTP] Error in process_http_request: {e}")
 
-    # Return None so websockets proceeds with regular WebSocket handshake
+    # Fallback return None
     return None
 
 async def main():
@@ -418,6 +544,7 @@ async def main():
     )
 
     print(f"[INFO] Starting Endless Ride Game Hub & WebSocket on 0.0.0.0:{args.port}")
+    print(f"[INFO] Endless Ride Web Game accessible at: http://<pi-ip>:{args.port}/")
     print(f"[INFO] Smartphone Remote App accessible at: http://<pi-ip>:{args.port}/remote")
     print("Press Ctrl+C to stop.")
 

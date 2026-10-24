@@ -227,10 +227,11 @@ Endless Ride is a high-performance Three.js + TypeScript endless runner designed
 - **Status**: ✅ **Completed**
 - **Resolution**:
   - **Full Game & Sensor Coordination Hub**: Upgraded [`scripts/sensor_bridge.py`](file:///home/rengglian/repos/EndlessRide/scripts/sensor_bridge.py) into a central headless game hub.
-  - **Persistent Multi-Player Leaderboard & Room State**: Maintained and persisted room state (`playerName`, `players`, `difficulty`, `sensitivity`, `calOffset`, `gameState`, `liveStats`, `leaderboard`) in [`scripts/leaderboard.json`](file:///home/rengglian/repos/EndlessRide/scripts/leaderboard.json).
+  - **Single-Port Game & Remote Serving**: Disambiguates `Upgrade: websocket` requests from HTTP GET requests on port 8080. Serves the full compiled 3D game bundle (`dist/`) at `http://<pi-ip>:8080/` and the Smartphone Companion Remote at `/remote` (or `/remote.html`) with proper MIME types and path-traversal safety.
+  - **Persistent Multi-Player Leaderboard & Room State**: Maintained and persisted room state (`playerName`, `players`, `difficulty`, `sensitivity`, `calOffset`, `gameState`, `liveStats`, `leaderboard`) in [`scripts/leaderboard.json`](file:///home/rengglian/repos/EndlessRide/scripts/leaderboard.json) with `LEADERBOARD_FILE` environment override support.
   - **Balance Board Zero / Tare Calibration**: Real-time tare calibration (`{"type": "calibrate"}`) captures the board's current tilt angle as `calOffset`, computing calibrated steer `(raw_steer - calOffset) * sensitivity` clamped to $[-1.0, 1.0]$.
-  - **Built-in HTTP Serving**: Uses `process_request` in `websockets.serve` to serve [`public/remote.html`](file:///home/rengglian/repos/EndlessRide/public/remote.html) directly when opening `http://<pi-ip>:8080/remote` or `/remote.html` in any smartphone browser.
-  - **Smartphone Remote App**: Full mobile web app featuring live Bubble Level gauge, Big-Thumb Start/Pause/Resume controls, rider profile switching, difficulty presets, and Top-10 leaderboard.
+  - **Smartphone Remote App**: Full mobile web app at [`public/remote.html`](file:///home/rengglian/repos/EndlessRide/public/remote.html) featuring live Bubble Level gauge, Big-Thumb Start/Pause/Resume controls, rider profile switching, difficulty presets, and Top-10 leaderboard.
+  - **Docker & Compose Single-Container Stack**: Implemented multi-stage [`Dockerfile`](file:///home/rengglian/repos/EndlessRide/Dockerfile) (`node:20-alpine` builder + `python:3.11-slim` runtime) and [`docker-compose.yml`](file:///home/rengglian/repos/EndlessRide/docker-compose.yml) running the game, remote, WebSocket, and 50 Hz UDP receiver in a single container with volume persistence (`./data:/app/data`).
 
 ---
 
@@ -282,7 +283,7 @@ Endless Ride is a high-performance Three.js + TypeScript endless runner designed
 | 🟡 P2 | Shadow texel snapping, fog density derivation | 4.5 | ✅ **Completed** |
 | 🟡 P2 | Start screen, Pause overlay (`Esc`/`P`), Gamepad, High Score persistence | 6.2, 6.5 | ✅ **Completed** |
 | 🟡 P2 | Collectibles (apples & horseshoes) + score multiplier | 6.1 | ✅ **Completed** |
-| 🟡 P2 | Headless Pi Hub + Smartphone Companion (`/remote.html`) + Leaderboard + Tare | 7.2 | ✅ **Completed** |
+| 🟡 P2 | Headless Pi Hub + Smartphone Remote + Leaderboard + Tare + Docker Stack | 7.2 | ✅ **Completed** |
 | 🟡 P2 | WebAudio gallop, wind, and crash sounds | 6.2 | ⏳ Open |
 | 🟢 P3 | Jump mechanic | 6.1 | 🚫 **Excluded (N/A for balance board)** |
 | 🟢 P3 | Spring camera damping and visual tilt | 6.3, 6.4 | ✅ **Completed** |

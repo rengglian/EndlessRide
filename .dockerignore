@@ -1,0 +1,18 @@
+node_modules
+dist
+.git
+.gitignore
+.vscode
+.idea
+*.log
+__pycache__
+*.pyc
+.venv
+venv
+scripts/leaderboard.json
+# Exclude raw Blender/FBX/OBJ source art not used at runtime (only glTF/GLB are used)
+public/assets/**/*.blend
+public/assets/**/*.blend1
+public/assets/**/*.fbx
+public/assets/**/*.obj
+public/assets/**/*.mtl
