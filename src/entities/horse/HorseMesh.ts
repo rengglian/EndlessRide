@@ -5,6 +5,8 @@ export class HorseMesh {
   public saddleGroup: THREE.Group;
   public bitLeftPos: THREE.Vector3 = new THREE.Vector3();
   public bitRightPos: THREE.Vector3 = new THREE.Vector3();
+  private bitLeftMesh!: THREE.Mesh;
+  private bitRightMesh!: THREE.Mesh;
 
   // Skeletal leg nodes for articulated quadruped gallop
   private legFL!: THREE.Group;
@@ -217,13 +219,13 @@ export class HorseMesh {
     });
 
     // Bridle Leather Straps & Bit Rings
-    const bitLeft = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.015, 6, 10), this.metalMat);
-    bitLeft.position.set(-0.15, -0.14, 0.42);
-    this.headGroup.add(bitLeft);
+    this.bitLeftMesh = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.015, 6, 10), this.metalMat);
+    this.bitLeftMesh.position.set(-0.15, -0.14, 0.42);
+    this.headGroup.add(this.bitLeftMesh);
 
-    const bitRight = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.015, 6, 10), this.metalMat);
-    bitRight.position.set(0.15, -0.14, 0.42);
-    this.headGroup.add(bitRight);
+    this.bitRightMesh = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.015, 6, 10), this.metalMat);
+    this.bitRightMesh.position.set(0.15, -0.14, 0.42);
+    this.headGroup.add(this.bitRightMesh);
 
     // 4. Articulated Tail with Tufts
     this.tailGroup = new THREE.Group();
@@ -341,6 +343,21 @@ export class HorseMesh {
     // 5. Neck Cadence (bobbing in sync with stride)
     this.neckGroup.rotation.x = -cosP * 0.14;
     this.headGroup.rotation.x = sinP * 0.1;
+  }
+
+  public getBitPositions(outLeft: THREE.Vector3, outRight: THREE.Vector3): void {
+    if (this.bitLeftMesh && this.bitRightMesh) {
+      this.bitLeftMesh.getWorldPosition(outLeft);
+      this.bitRightMesh.getWorldPosition(outRight);
+    } else {
+      this.headGroup.getWorldPosition(outLeft);
+      this.headGroup.getWorldPosition(outRight);
+    }
+  }
+
+  public getSaddleTransform(outPos: THREE.Vector3): number {
+    this.saddleGroup.getWorldPosition(outPos);
+    return this.torsoGroup.rotation.x;
   }
 
   public dispose(): void {

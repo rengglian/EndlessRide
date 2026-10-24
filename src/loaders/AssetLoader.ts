@@ -6,6 +6,8 @@ export interface LoadedModel {
   mixer: THREE.AnimationMixer | null;
   animations: THREE.AnimationClip[];
   saddleBone: THREE.Object3D | null;
+  gallopAction?: THREE.AnimationAction | null;
+  gallopDuration?: number;
 }
 
 export class AssetLoader {
@@ -47,6 +49,8 @@ export class AssetLoader {
 
           // Setup animation mixer if animation clips exist
           let mixer: THREE.AnimationMixer | null = null;
+          let gallopAction: THREE.AnimationAction | null = null;
+          let gallopDuration = 0.6;
           if (gltf.animations && gltf.animations.length > 0) {
             mixer = new THREE.AnimationMixer(group);
             const gallopClip =
@@ -57,31 +61,40 @@ export class AssetLoader {
                   a.name.toLowerCase().includes('run')
               ) || gltf.animations[0];
 
-            const action = mixer.clipAction(gallopClip);
-            action.setLoop(THREE.LoopRepeat, Infinity);
-            action.play();
+            gallopAction = mixer.clipAction(gallopClip);
+            gallopAction.setLoop(THREE.LoopRepeat, Infinity);
+            gallopAction.play();
+            gallopDuration = gallopClip.duration || 0.6;
           }
 
-          // Search for saddle or spine bone
+          // Search for saddle or spine bone (prioritize torso2 directly beneath saddle)
           let saddleBone: THREE.Object3D | null = null;
           group.traverse((node) => {
             const name = node.name.toLowerCase();
-            if (
-              name === 'back' ||
-              name === 'torso2' ||
-              name === 'torso' ||
-              name.includes('saddle') ||
-              name.includes('spine')
-            ) {
-              if (!saddleBone) saddleBone = node;
+            if (name === 'torso2' || name.includes('saddle')) {
+              saddleBone = node;
             }
           });
+          if (!saddleBone) {
+            group.traverse((node) => {
+              const name = node.name.toLowerCase();
+              if (
+                name === 'torso' ||
+                name === 'back' ||
+                name.includes('spine')
+              ) {
+                if (!saddleBone) saddleBone = node;
+              }
+            });
+          }
 
           resolve({
             scene: group,
             mixer,
             animations: gltf.animations || [],
-            saddleBone
+            saddleBone,
+            gallopAction,
+            gallopDuration
           });
         },
         undefined,
