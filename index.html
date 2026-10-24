@@ -35,7 +35,7 @@
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+      padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
     }
     .hud-top {
       display: flex;
@@ -45,27 +45,27 @@
       flex-wrap: wrap;
     }
     .score-badge {
-      background: rgba(15, 23, 42, 0.78);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(15, 23, 42, 0.82);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.16);
       color: #fff;
-      padding: 8px 14px;
+      padding: 7px 13px;
       border-radius: 12px;
       display: flex;
       flex-direction: column;
       gap: 2px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      box-shadow: 0 4px 14px rgba(0,0,0,0.35);
     }
     .score-title {
-      font-size: 10.5px;
+      font-size: 10px;
       text-transform: uppercase;
       letter-spacing: 1px;
       color: #94a3b8;
       font-weight: 600;
     }
     .score-value {
-      font-size: 22px;
+      font-size: 20px;
       font-weight: 800;
       font-family: monospace;
       color: #38bdf8;
@@ -77,7 +77,7 @@
       color: #34d399;
     }
     .multiplier-container {
-      min-width: 90px;
+      min-width: 86px;
     }
     .multiplier-bar-bg {
       width: 100%;
@@ -96,17 +96,17 @@
     }
     #hud-pickup-toast {
       position: absolute;
-      top: 110px;
+      top: 96px;
       left: 50%;
       transform: translateX(-50%) translateY(0);
-      background: rgba(15, 23, 42, 0.92);
+      background: rgba(15, 23, 42, 0.94);
       border: 1px solid rgba(250, 204, 21, 0.5);
       color: #facc15;
       font-weight: 800;
       font-size: 15px;
       padding: 7px 18px;
       border-radius: 24px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
       pointer-events: none;
       opacity: 0;
       transition: opacity 0.25s ease, transform 0.25s ease;
@@ -122,7 +122,7 @@
     .touch-indicator-container {
       display: flex;
       width: 100%;
-      height: 70px;
+      height: 64px;
       justify-content: space-between;
       align-items: center;
       opacity: 0.6;
@@ -131,9 +131,9 @@
       background: rgba(255, 255, 255, 0.08);
       border: 1px dashed rgba(255, 255, 255, 0.2);
       border-radius: 16px;
-      padding: 12px 24px;
+      padding: 10px 20px;
       color: rgba(255, 255, 255, 0.7);
-      font-size: 13px;
+      font-size: 12.5px;
       font-weight: 600;
       display: flex;
       align-items: center;
@@ -142,9 +142,9 @@
     .modal-overlay {
       position: absolute;
       inset: 0;
-      background: rgba(15, 23, 42, 0.85);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -153,9 +153,10 @@
       opacity: 0;
       visibility: hidden;
       transition: opacity 0.3s ease, visibility 0.3s ease;
-      gap: 16px;
+      gap: 14px;
       color: #fff;
       z-index: 50;
+      padding: 16px;
     }
     .modal-overlay.visible {
       opacity: 1;
@@ -163,22 +164,24 @@
     }
     .gameover-card {
       background: #1e293b;
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 20px;
-      padding: 32px;
+      padding: 24px 28px;
       text-align: center;
-      max-width: 380px;
-      width: 90%;
-      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+      max-width: 520px;
+      width: 95%;
+      max-height: 92vh;
+      overflow-y: auto;
+      box-shadow: 0 24px 48px rgba(0,0,0,0.6);
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 12px;
     }
     .restart-btn {
       background: #3b82f6;
       color: white;
       border: none;
-      padding: 14px 28px;
+      padding: 13px 26px;
       font-size: 16px;
       font-weight: 700;
       border-radius: 12px;
@@ -204,24 +207,266 @@
       display: none;
     }
 
+    /* Player & Difficulty Selector Controls */
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #94a3b8;
+      text-align: left;
+      margin-top: 4px;
+    }
+    .player-pills-row, .diff-pills-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }
+    .player-pill, .diff-pill {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #cbd5e1;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .player-pill:hover, .diff-pill:hover {
+      background: rgba(255, 255, 255, 0.16);
+      color: #fff;
+    }
+    .player-pill.active {
+      background: #0284c7;
+      border-color: #38bdf8;
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(2, 132, 199, 0.4);
+    }
+    .diff-pill.active {
+      background: #d97706;
+      border-color: #f59e0b;
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(217, 119, 6, 0.4);
+    }
+    .player-name-input {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: #fff;
+      font-size: 13px;
+      width: 100%;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .player-name-input:focus {
+      border-color: #38bdf8;
+    }
+
+    /* Hands-Free Balance Board Hold Progress */
+    .board-hold-container {
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      border-radius: 10px;
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin: 4px 0;
+    }
+    .board-hold-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: #7dd3fc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .board-hold-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .board-hold-bar {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #38bdf8, #10b981);
+      border-radius: 3px;
+      transition: width 0.08s linear;
+    }
+
+    /* Leaderboard Table */
+    .leaderboard-container {
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 8px 12px;
+      max-height: 140px;
+      overflow-y: auto;
+    }
+    .leaderboard-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 12px;
+    }
+    .leaderboard-row:last-child {
+      border-bottom: none;
+    }
+    .lb-rank {
+      width: 22px;
+      font-weight: 800;
+      color: #facc15;
+    }
+    .lb-name {
+      flex: 1;
+      text-align: left;
+      font-weight: 600;
+      color: #e2e8f0;
+      padding-left: 6px;
+    }
+    .lb-score {
+      font-weight: 800;
+      color: #38bdf8;
+      font-family: monospace;
+    }
+    .lb-dist {
+      color: #94a3b8;
+      font-size: 11px;
+      margin-left: 8px;
+    }
+
+    /* Smartphone Companion Card */
+    .remote-companion-card {
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 12px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-align: left;
+    }
+    .remote-qr-icon {
+      flex-shrink: 0;
+      width: 44px;
+      height: 44px;
+      background: rgba(56, 189, 248, 0.12);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .remote-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .remote-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #38bdf8;
+    }
+    .remote-subtitle {
+      font-size: 10.5px;
+      color: #94a3b8;
+      line-height: 1.3;
+      margin-top: 1px;
+    }
+    .remote-url {
+      font-family: monospace;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #facc15;
+      margin-top: 3px;
+      word-break: break-all;
+    }
+
+    /* 3-2-1 Countdown Overlay */
+    #countdown-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.7);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 60;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.2s ease, visibility 0.2s ease;
+    }
+    #countdown-overlay.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+    .countdown-card {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    #countdown-number {
+      font-size: 110px;
+      font-weight: 900;
+      font-family: monospace;
+      color: #38bdf8;
+      line-height: 1;
+      text-shadow: 0 0 40px rgba(56, 189, 248, 0.6);
+      animation: countPulse 1s infinite ease-out;
+    }
+    #countdown-subtitle {
+      font-size: 20px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: 0.5px;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+    }
+    #countdown-details {
+      font-size: 14px;
+      font-weight: 600;
+      color: #facc15;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+    }
+
+    @keyframes countPulse {
+      0% { transform: scale(1.15); opacity: 0.8; }
+      50% { transform: scale(1.0); opacity: 1.0; }
+      100% { transform: scale(0.95); opacity: 0.9; }
+    }
+
     @media (max-width: 600px) {
       .hud-top {
-        gap: 6px;
+        gap: 5px;
       }
       .score-badge {
-        padding: 5px 9px;
-        border-radius: 9px;
+        padding: 5px 8px;
+        border-radius: 8px;
       }
       .score-title {
-        font-size: 9px;
+        font-size: 8.5px;
       }
       .score-value {
-        font-size: 15px;
+        font-size: 14px;
       }
-      #hud-pickup-toast {
-        top: 130px;
-        font-size: 13px;
-        padding: 5px 14px;
+      .gameover-card {
+        padding: 16px;
+      }
+      #countdown-number {
+        font-size: 72px;
+      }
+      #countdown-subtitle {
+        font-size: 16px;
       }
     }
   </style>
@@ -231,34 +476,45 @@
 
   <div id="hud-overlay">
     <div class="hud-top">
+      <!-- Rider & Preset Badge -->
+      <div class="score-badge">
+        <span class="score-title">Rider</span>
+        <span id="hud-player" class="score-value" style="font-size: 14px; color: #e2e8f0; white-space: nowrap;">🏇 Rider 1 · Standard</span>
+      </div>
+
       <div class="score-badge">
         <span class="score-title">Score</span>
         <span id="hud-score" class="score-value" style="color: #38bdf8;">0 pts</span>
       </div>
+
       <div class="score-badge multiplier-container">
         <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 6px;">
           <span class="score-title">Mult</span>
-          <span id="hud-multiplier" class="score-value" style="color: #f59e0b; font-size: 18px;">1.0x</span>
+          <span id="hud-multiplier" class="score-value" style="color: #f59e0b; font-size: 17px;">1.0x</span>
         </div>
         <div class="multiplier-bar-bg">
           <div id="hud-multiplier-bar"></div>
         </div>
       </div>
+
       <div class="score-badge">
         <span class="score-title">Items</span>
-        <span id="hud-collectibles" class="score-value" style="font-size: 15px; color: #f1f5f9;">🍎 0 &nbsp;🧲 0</span>
+        <span id="hud-collectibles" class="score-value" style="font-size: 14px; color: #f1f5f9;">🍎 0 &nbsp;🧲 0</span>
       </div>
+
       <div class="score-badge">
         <span class="score-title">Distance</span>
-        <span id="hud-distance" class="score-value" style="font-size: 18px;">0 m</span>
+        <span id="hud-distance" class="score-value" style="font-size: 17px;">0 m</span>
       </div>
+
       <div class="score-badge">
         <span class="score-title">Best</span>
-        <span id="hud-high-score" class="score-value high-score-value" style="font-size: 18px;">0 pts</span>
+        <span id="hud-high-score" class="score-value high-score-value" style="font-size: 17px;">0 pts</span>
       </div>
+
       <div class="score-badge">
         <span class="score-title">Speed</span>
-        <span id="hud-speed" class="score-value speed-value" style="font-size: 18px;">18.0 m/s</span>
+        <span id="hud-speed" class="score-value speed-value" style="font-size: 17px;">18.0 m/s</span>
       </div>
     </div>
 
@@ -271,14 +527,80 @@
     </div>
   </div>
 
+  <!-- 3-2-1 Countdown Overlay -->
+  <div id="countdown-overlay">
+    <div class="countdown-card">
+      <div id="countdown-number">3</div>
+      <div id="countdown-subtitle">Get Ready! · Step onto the Balance Board</div>
+      <div id="countdown-details">Rider 1 · Standard</div>
+    </div>
+  </div>
+
   <!-- Start Screen Modal -->
   <div id="start-modal" class="modal-overlay visible">
     <div class="gameover-card">
-      <div style="font-size: 13px; font-weight: 800; letter-spacing: 2px; color: #38bdf8; text-transform: uppercase;">ENDLESS RUNNER</div>
-      <h1 style="font-size: 26px; font-weight: 800;">Endless Ride</h1>
-      <p style="color: #94a3b8; font-size: 14px;">Gallop through scenic mountain trails. Dodge obstacles laterally and grab 🍎 Apples & 🧲 Horseshoes for bonus score and multipliers!</p>
-      <button id="start-btn" class="restart-btn" style="background: #10b981;">Start Ride</button>
-      <div style="font-size: 12px; color: #64748b;">Controls: A / D, Left / Right, Touch screen sides, or Tilt Sensor</div>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 12px; font-weight: 800; letter-spacing: 2px; color: #38bdf8; text-transform: uppercase;">ENDLESS RUNNER</span>
+        <span style="font-size: 11px; background: rgba(56, 189, 248, 0.15); color: #7dd3fc; padding: 2px 8px; border-radius: 6px; font-weight: 700;">NVIDIA Shield + Board</span>
+      </div>
+
+      <h1 style="font-size: 26px; font-weight: 800; margin: -4px 0 2px 0;">Endless Ride</h1>
+
+      <!-- Player Selection -->
+      <div class="section-title">Select Rider</div>
+      <div class="player-pills-row" id="start-player-pills">
+        <button class="player-pill active" data-player="Rider 1">Rider 1</button>
+        <button class="player-pill" data-player="Rider 2">Rider 2</button>
+        <button class="player-pill" data-player="Alex">Alex</button>
+        <button class="player-pill" data-player="Sam">Sam</button>
+        <button class="player-pill" data-player="Champion">Champion</button>
+      </div>
+      <input type="text" id="player-name-input" class="player-name-input" placeholder="Or enter custom name..." value="Rider 1" maxlength="16">
+
+      <!-- Difficulty Selection -->
+      <div class="section-title">Difficulty</div>
+      <div class="diff-pills-row" id="start-diff-pills">
+        <button class="diff-pill" data-diff="relaxed">Relaxed (14-22 m/s)</button>
+        <button class="diff-pill active" data-diff="standard">Standard (18-30 m/s)</button>
+        <button class="diff-pill" data-diff="pro">Pro Rodeo (22-35 m/s)</button>
+      </div>
+
+      <!-- Hands-free Balance Board Hold-to-Start -->
+      <div class="board-hold-container">
+        <div class="board-hold-label" id="board-hold-hint">⚖️ Lean Board Left/Right for 1.6s to Start</div>
+        <div class="board-hold-bar-bg">
+          <div id="start-board-hold-bar" class="board-hold-bar"></div>
+        </div>
+      </div>
+
+      <!-- Action Button -->
+      <button id="start-btn" class="restart-btn" style="background: #10b981; font-size: 17px; padding: 14px 28px;">Start Ride</button>
+
+      <!-- Leaderboard -->
+      <div class="section-title">Top Riders</div>
+      <div class="leaderboard-container">
+        <div id="leaderboard-list"></div>
+      </div>
+
+      <!-- Smartphone Remote Companion Card -->
+      <div class="remote-companion-card">
+        <div class="remote-qr-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
+            <rect x="2" y="2" width="8" height="8" rx="1.5"/>
+            <rect x="14" y="2" width="8" height="8" rx="1.5"/>
+            <rect x="2" y="14" width="8" height="8" rx="1.5"/>
+            <rect x="5" y="5" width="2" height="2" fill="#38bdf8"/>
+            <rect x="17" y="5" width="2" height="2" fill="#38bdf8"/>
+            <rect x="5" y="17" width="2" height="2" fill="#38bdf8"/>
+            <path d="M14 14h3v3h-3zM20 14v6M14 20h3M17 17h3" stroke-width="2"/>
+          </svg>
+        </div>
+        <div class="remote-info">
+          <div class="remote-title">📱 Smartphone Remote Companion</div>
+          <div class="remote-subtitle">Open in your phone browser to choose riders, calibrate sensor, & steer:</div>
+          <div id="remote-url-text" class="remote-url">http://localhost:3000/remote.html</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -287,7 +609,7 @@
     <div class="gameover-card">
       <div style="font-size: 13px; font-weight: 800; letter-spacing: 2px; color: #facc15; text-transform: uppercase;">GAME PAUSED</div>
       <h2 style="font-size: 24px; font-weight: 800;">Ride Paused</h2>
-      <p style="color: #94a3b8; font-size: 14px;">Press Esc, P, or tap below to continue.</p>
+      <p style="color: #94a3b8; font-size: 14px;">Press Esc, P, tap below, or resume from Smartphone Remote.</p>
       <button id="resume-btn" class="restart-btn">Resume Ride</button>
     </div>
   </div>
@@ -299,7 +621,22 @@
       <div style="font-size: 14px; font-weight: 800; letter-spacing: 2px; color: #ef4444; text-transform: uppercase;">GAME OVER</div>
       <h2 style="font-size: 24px; font-weight: 800;">Run Ended</h2>
       <p id="final-stats" style="color: #94a3b8; font-size: 15px;">You covered 0 meters!</p>
+
+      <!-- Hands-free Balance Board Hold-to-Restart -->
+      <div class="board-hold-container">
+        <div class="board-hold-label">⚖️ Lean Board Left/Right for 1.6s to Ride Again</div>
+        <div class="board-hold-bar-bg">
+          <div id="gameover-board-hold-bar" class="board-hold-bar"></div>
+        </div>
+      </div>
+
       <button id="restart-btn" class="restart-btn">Ride Again</button>
+
+      <!-- Leaderboard on Game Over -->
+      <div class="section-title">Top Riders</div>
+      <div class="leaderboard-container">
+        <div id="gameover-leaderboard-list"></div>
+      </div>
     </div>
   </div>
 

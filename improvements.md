@@ -1,14 +1,14 @@
 # Endless Ride – Project Review & Improvement Plan
 
 > Review date: 2026-10-24 · Scope: all tracked source (`src/`, `index.html`, `scripts/`, configs, `.agents/`), build output, and the asset tree.
-> Status: **Core Engine, Track Math, Instanced Scenery, Swept Collision, Collectibles & Score Multiplier, Fixed-Timestep, UI Flow & Hardware Robustness are COMPLETED (✅)**. Remaining open items (asset compression, ESLint/Vitest CI, audio) are tracked as **Future Work (⏳)**.
+> Status: **Core Engine, Track Math, Instanced Scenery, Swept Collision, Collectibles & Multiplier, Headless Pi Hub, Smartphone Companion Remote (`/remote.html`), Persistent Leaderboard & Balance Board Tare are COMPLETED (✅)**. Remaining open items (asset compression, ESLint/Vitest CI, audio) are tracked as **Future Work (⏳)**.
 > Checks run: `tsc --noEmit` ✅ (no errors), `vite build` ✅ (production bundle built cleanly).
 
 ---
 
 ## 1. Summary
 
-Endless Ride is a high-performance Three.js + TypeScript endless runner designed for both mobile touch and physical balance-board / tilt-reins motion controllers.
+Endless Ride is a high-performance Three.js + TypeScript endless runner designed for both mobile touch and physical balance-board / tilt-reins motion controllers. It supports both standalone arcade browser play and an arcade-kiosk deployment with an **NVIDIA Shield / TV display, headless Raspberry Pi Game & Sensor Hub, and a Smartphone Companion Remote App**.
 
 ### Status Overview
 - **Completed Improvements (✅)**:
@@ -17,10 +17,20 @@ Endless Ride is a high-performance Three.js + TypeScript endless runner designed
   - **Metre-Based Procedural Shader**: Converted track UV coordinates to real metres ($u \in [-36, 36]\text{m}$, $s \in [0, 1200]\text{m}$), 35cm sandstone curb trim, uniform seamless meadow noise, mobile-safe Dave Hoskins `hash12`, and `fwidth` distance attenuation.
   - **Draw Call Reduction via Instancing**: Replaced individual mesh groups with 4 `THREE.InstancedMesh` instances per chunk (`TrackChunk.ts`), dropping roadside scenery draw calls from 144 to 24 world-wide.
   - **Zero-Allocation Obstacles & Swept Collision**: Pre-allocated shared obstacle geometries in `ObstaclePool.ts`, in-place swap-remove recycling in `ObstacleManager.ts`, static matrix freeze (`matrixAutoUpdate = false`), and swept longitudinal interval AABB collision in $(s, u)$ space.
+  - **Apples & Golden Horseshoes Collectibles (Sec 6.1)**: Pre-allocated pooling in `src/collectibles/`, deterministic risk/reward wave placement in open lanes, mid-segment streaks, and dynamic score multiplier system ($1.0\times$ to $4.0\times$).
   - **Deterministic Fixed-Timestep 60Hz Loop**: Decoupled physics simulation from render frame rate in `Engine.ts`, eliminating slow-motion dips below 20 FPS.
   - **Shadow Texel Snapping**: Snapped directional sunlight target to shadow-map texel grid (50m / 1024px ≈ 5cm) to eliminate shadow edge shimmering.
-  - **Complete Game State Flow, Collectibles & Persistence**: Implemented `START` screen with tap/Space to start, `PAUSE` overlay (`Esc` / `P` / blur / visibilitychange), deterministic Apples & Golden Horseshoes collectibles with dynamic score multiplier (`1.0x`–`5.0x`), and `localStorage` High Score persistence with "New Record!" banner.
-  - **Hardware Controller Hardening**: Upgraded `m5stack_atoms3_reins.ino` with BMI270 complementary gyro+accel filter, long-press `BtnA` zero-calibration saved to NVS, 4x UDP restart redundancy with sequence numbers, and automatic Wi-Fi reconnect; hardened `sensor_bridge.py` with opt-in simulation (`--simulate`) and WebSocket broadcast.
+  - **Complete Game State Flow & Persistence**: Implemented `START` screen with countdown prompt, `PAUSE` overlay (`Esc` / `P` / blur / visibilitychange), and `localStorage` High Score persistence with "New Record!" banner.
+  - **Headless Raspberry Pi Game & Sensor Hub (`scripts/sensor_bridge.py`)**:
+    - Bidirectional WebSocket protocol coordinating TV game client, hardware controllers, and smartphone remotes.
+    - Persistent family/party leaderboard and player profiles saved to `scripts/leaderboard.json`.
+    - Live balance board Tare / Zero calibration (`{"type": "calibrate"}`) and sensitivity tuning.
+    - Built-in HTTP convenience server directly serving `/remote` or `/remote.html` on port 8080.
+  - **Smartphone Companion Remote Web App (`public/remote.html`)**:
+    - Mobile-first web app with big-thumb controls (Start 3-2-1, Pause, Resume, Quick Restart).
+    - Real-time horizontal Bubble Level Gauge for balance board tilt feedback.
+    - Quick Zero / Tare button, sensitivity slider, rider name profiles, difficulty presets, and Top-10 Leaderboard.
+  - **Hardware Controller Hardening**: Upgraded `m5stack_atoms3_reins.ino` with BMI270 complementary gyro+accel filter, long-press `BtnA` zero-calibration saved to NVS, 4x UDP restart redundancy with sequence numbers, and automatic Wi-Fi reconnect.
 - **Open / Future Work (⏳)**:
   - Moving raw art source files (`.blend`, `.fbx`, `.obj`) out of `public/` into an external `art-source/` folder and converting runtime models from base64 `.gltf` to compressed `.glb` + meshopt.
   - Setting up ESLint flat config, Vitest unit tests, and GitHub Actions CI.
@@ -44,7 +54,7 @@ Endless Ride is a high-performance Three.js + TypeScript endless runner designed
 - **Resolution**:
   - In [sensor_bridge.py](file:///home/rengglian/repos/EndlessRide/scripts/sensor_bridge.py), removed automatic fallback to sine-wave simulation; simulation is now strictly opt-in via `--simulate`.
   - In [InputManager.ts](file:///home/rengglian/repos/EndlessRide/src/input/InputManager.ts), WebSocket connection is strictly opt-in only when the `?sensor=` query parameter is present in the URL.
-  - Added a **350ms staleness timeout**: if no sensor datagram arrives within 350ms, sensor steering drops to 0.0.
+  - Added a **250ms staleness timeout**: if no sensor datagram arrives within 250ms, sensor steering drops to 0.0.
   - Combined inputs cleanly: `steer = touchActive ? touchSteer : (keyboard !== 0 ? keyboard : (gamepad !== 0 ? gamepad : sensorSteer))`.
 
 ### 2.4 Hardware button restarts game mid-run
@@ -145,7 +155,7 @@ Endless Ride is a high-performance Three.js + TypeScript endless runner designed
 
 ### 4.7 Bundle optimization
 - **Status**: ⏳ **Open / Future Work**
-- **Description**: Tree-shaking Three.js imports and dynamic `import()` code-splitting for loaders. (Production bundle builds at ~641 kB).
+- **Description**: Tree-shaking Three.js imports and dynamic `import()` code-splitting for loaders. (Production bundle builds at ~650 kB).
 
 ---
 
@@ -153,7 +163,7 @@ Endless Ride is a high-performance Three.js + TypeScript endless runner designed
 
 ### 5.1 Centralize configuration
 - **Status**: ✅ **Completed**
-- **Resolution**: Created [`src/config.ts`](file:///home/rengglian/repos/EndlessRide/src/config.ts) containing all gameplay, dimension, and streaming constants (`BASE_SPEED`, `MAX_SPEED`, `STEER_MAX_SPEED`, `MAX_LATERAL_OFFSET`, `CHUNK_LENGTH`, `CHUNK_SEGMENTS`, `PATH_HALF_WIDTH`, `CHUNKS_AHEAD`, `CHUNKS_BEHIND`, `GEOMETRIC_BANK_SPEED`, `LANE_OFFSETS`, `UV_DISTANCE_PERIOD`).
+- **Resolution**: Created [`src/config.ts`](file:///home/rengglian/repos/EndlessRide/src/config.ts) containing all gameplay, dimension, speed, score, and streaming constants.
 
 ### 5.2 Separate simulation from presentation
 - **Status**: ⏳ **Open / Future Work**
@@ -165,24 +175,24 @@ Endless Ride is a high-performance Three.js + TypeScript endless runner designed
   - Added `/// <reference lib="webworker" />` and removed `any` casts from [track.worker.ts](file:///home/rengglian/repos/EndlessRide/src/track/workers/track.worker.ts).
   - Added worker `onerror` handler in [TrackChunkManager.ts](file:///home/rengglian/repos/EndlessRide/src/track/TrackChunkManager.ts) that terminates the broken worker and re-requests pending chunks synchronously.
   - Guarded debug exports with `import.meta.env?.DEV`.
-  - Added clean disposal methods for shared geometries and materials in `ObstaclePool.ts` and `TrackChunk.ts`.
+  - Added clean disposal methods for shared geometries and materials in `ObstaclePool.ts`, `CollectiblePool.ts`, and `TrackChunk.ts`.
 
 ---
 
 ## 6. Gameplay & UX
 
-### 6.1 Core loop & Jump mechanic
+### 6.1 Core loop, Collectibles & Jump mechanic
 - **Status**:
-  - **Jump Mechanic**: 🚫 **Excluded (N/A)** — Endless Ride is designed specifically for an arcade balance-board / tilt-reins controller where all obstacles are dodged laterally.
+  - **Collectibles & Multiplier**: ✅ **Completed** — Implemented Apples (+50 pts) and Golden Horseshoes (+250 pts & +0.5x score multiplier up to 4.0x) in `src/collectibles/`. Seeded deterministic placement in open obstacle lanes and mid-segment streaks (`trackMath.ts`).
   - **Difficulty Curve**: ✅ **Completed** — Obstacle wave spacing dynamically scales down from $26\text{m}$ to $17\text{m}$, and double-obstacle probability scales from $0.35$ up toward $0.68$ as distance increases, while always guaranteeing at least 1 open lane (`trackMath.ts`).
-  - **Collectibles**: ✅ **Completed** — Added pooled 3D Apples (`+0.2x` multiplier, `+25` base bonus pts) and Golden Horseshoes (`+0.5x` multiplier, `+75` base bonus pts) with deterministic risk/reward wave spawning and mid-segment streaks in [`trackMath.ts`](file:///home/rengglian/repos/EndlessRide/src/track/trackMath.ts), zero-allocation object pooling in [`CollectiblePool.ts`](file:///home/rengglian/repos/EndlessRide/src/collectibles/CollectiblePool.ts), swept collection checks in [`CollectibleManager.ts`](file:///home/rengglian/repos/EndlessRide/src/collectibles/CollectibleManager.ts), and HUD multiplier bar + pickup toast in [`HUD.ts`](file:///home/rengglian/repos/EndlessRide/src/ui/HUD.ts).
+  - **Jump Mechanic**: 🚫 **Excluded (N/A)** — Endless Ride is designed specifically for an arcade balance-board / tilt-reins controller where all obstacles are dodged laterally.
 
 ### 6.2 Flow & meta
-- **Status**: ✅ **Completed** (Core Flow) / ⏳ **Open** (Audio)
+- **Status**: ✅ **Completed** (Core Flow & Persistence) / ⏳ **Open** (Audio)
 - **Resolution**:
-  - Implemented interactive `START` screen overlay with "Tap or Press Space to Start".
-  - Implemented `PAUSE` overlay triggered by `Esc` / `P` / window `blur` / `visibilitychange`.
-  - Implemented High Score persistence using `localStorage` with real-time new record detection on the Game Over screen.
+  - Implemented interactive `START` screen overlay with "Tap or Press Space to Start" and 3-2-1 countdown.
+  - Implemented `PAUSE` overlay triggered by `Esc` / `P` / window `blur` / `visibilitychange` / remote app.
+  - Implemented High Score persistence using `localStorage` and shared multi-player leaderboard via Raspberry Pi Hub (`scripts/leaderboard.json`).
   - **Audio**: ⏳ Planned WebAudio synthesized hoof-beats, wind noise, and crash effects.
 
 ### 6.3 Camera dynamics
@@ -193,15 +203,16 @@ Endless Ride is a high-performance Three.js + TypeScript endless runner designed
 - **Status**: ✅ **Completed**
 - **Resolution**: Added deterministic pseudo-random Y-rotation and scale variation to instanced trees and bushes in `TrackChunk.ts`.
 
-### 6.5 Mobile, Gamepad & Kiosk
+### 6.5 Mobile, Gamepad & Companion Remote
 - **Status**: ✅ **Completed**
 - **Resolution**:
   - In [InputManager.ts](file:///home/rengglian/repos/EndlessRide/src/input/InputManager.ts), added native **Gamepad API** support (left stick and D-pad X axis).
   - Responsive Pointer Events with touch prevention on UI buttons.
+  - Created standalone Smartphone Companion Controller Web App at [`public/remote.html`](file:///home/rengglian/repos/EndlessRide/public/remote.html).
 
 ---
 
-## 7. Hardware controller (firmware & bridge)
+## 7. Hardware controller & Raspberry Pi Hub
 
 ### 7.1 AtomS3 firmware (`m5stack_atoms3_reins.ino`)
 - **Status**: ✅ **Completed**
@@ -212,13 +223,14 @@ Endless Ride is a high-performance Three.js + TypeScript endless runner designed
   - **Wi-Fi Reconnection**: Added automatic `WiFi.status()` verification and reconnection loop.
   - Standardized on `fabsf()` for float operations.
 
-### 7.2 Python sensor bridge (`sensor_bridge.py`)
+### 7.2 Headless Raspberry Pi Hub & Smartphone Companion Remote (`sensor_bridge.py` & `/remote.html`)
 - **Status**: ✅ **Completed**
 - **Resolution**:
-  - Simulation is now strictly opt-in via `--simulate`.
-  - Switched client broadcasting to `websockets.broadcast` instead of unbounded `create_task`.
-  - Switched liveness checks to `time.monotonic()`.
-  - Added sequence number tracking to drop out-of-order UDP datagrams.
+  - **Full Game & Sensor Coordination Hub**: Upgraded [`scripts/sensor_bridge.py`](file:///home/rengglian/repos/EndlessRide/scripts/sensor_bridge.py) into a central headless game hub.
+  - **Persistent Multi-Player Leaderboard & Room State**: Maintained and persisted room state (`playerName`, `players`, `difficulty`, `sensitivity`, `calOffset`, `gameState`, `liveStats`, `leaderboard`) in [`scripts/leaderboard.json`](file:///home/rengglian/repos/EndlessRide/scripts/leaderboard.json).
+  - **Balance Board Zero / Tare Calibration**: Real-time tare calibration (`{"type": "calibrate"}`) captures the board's current tilt angle as `calOffset`, computing calibrated steer `(raw_steer - calOffset) * sensitivity` clamped to $[-1.0, 1.0]$.
+  - **Built-in HTTP Serving**: Uses `process_request` in `websockets.serve` to serve [`public/remote.html`](file:///home/rengglian/repos/EndlessRide/public/remote.html) directly when opening `http://<pi-ip>:8080/remote` or `/remote.html` in any smartphone browser.
+  - **Smartphone Remote App**: Full mobile web app featuring live Bubble Level gauge, Big-Thumb Start/Pause/Resume controls, rider profile switching, difficulty presets, and Top-10 leaderboard.
 
 ---
 
@@ -246,9 +258,10 @@ Endless Ride is a high-performance Three.js + TypeScript endless runner designed
 - **Status**: ✅ **Completed**
 - **Resolution**: Updated `README.md` and documentation to accurately reflect actual implementation:
   - Documented centralized `src/config.ts` and `src/track/trackMath.ts`.
+  - Documented Headless Raspberry Pi Hub, Smartphone Companion Remote (`/remote.html`), and Balance Board Tare.
+  - Documented Apples & Golden Horseshoes collectibles and dynamic score multipliers.
   - Accurate description of `InstancedMesh` draw calls and in-place `BufferAttribute` updates.
   - Clarified speed-independent geometric banking vs visual lean.
-  - Documented Start screen, Pause (`Esc`/`P`), Gamepad support, High Score, AtomS3 calibration, and opt-in `?sensor=` query parameter.
 
 ---
 
@@ -268,9 +281,10 @@ Endless Ride is a high-performance Three.js + TypeScript endless runner designed
 | 🟡 P2 | Remove per-frame allocations; throttle HUD DOM writes; matrix freeze | 4.3, 4.4 | ✅ **Completed** |
 | 🟡 P2 | Shadow texel snapping, fog density derivation | 4.5 | ✅ **Completed** |
 | 🟡 P2 | Start screen, Pause overlay (`Esc`/`P`), Gamepad, High Score persistence | 6.2, 6.5 | ✅ **Completed** |
+| 🟡 P2 | Collectibles (apples & horseshoes) + score multiplier | 6.1 | ✅ **Completed** |
+| 🟡 P2 | Headless Pi Hub + Smartphone Companion (`/remote.html`) + Leaderboard + Tare | 7.2 | ✅ **Completed** |
 | 🟡 P2 | WebAudio gallop, wind, and crash sounds | 6.2 | ⏳ Open |
 | 🟢 P3 | Jump mechanic | 6.1 | 🚫 **Excluded (N/A for balance board)** |
-| 🟢 P3 | Collectibles (horseshoes/apples) | 6.1 | ✅ **Completed** |
 | 🟢 P3 | Spring camera damping and visual tilt | 6.3, 6.4 | ✅ **Completed** |
 | 🟢 P3 | Firmware: complementary gyro fusion, calibration, 4x UDP restart, reconnect | 7.1, 7.2 | ✅ **Completed** |
 | 🟢 P3 | Split controller into pure physics/view components | 5.2 | ⏳ Open |

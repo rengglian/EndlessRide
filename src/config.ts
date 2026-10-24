@@ -34,3 +34,23 @@ export const HORSESHOE_MULTIPLIER_STEP = 0.5;
 export const MAX_SCORE_MULTIPLIER = 5.0;
 export const MULTIPLIER_HOLD_DURATION = 7.0; // seconds before multiplier starts decaying
 export const MULTIPLIER_DECAY_RATE = 0.35; // multiplier decay per second after hold duration expires
+
+/** Difficulty Presets & Hands-Free Balance Board Tuning */
+export type DifficultyPreset = 'relaxed' | 'standard' | 'pro';
+
+export interface DifficultyConfig {
+  label: string;
+  baseSpeed: number;
+  maxSpeed: number;
+  accelRate: number;
+}
+
+export const DIFFICULTY_PRESETS: Record<DifficultyPreset, DifficultyConfig> = {
+  relaxed: { label: 'Relaxed', baseSpeed: 14.0, maxSpeed: 22.0, accelRate: 0.12 },
+  standard: { label: 'Standard', baseSpeed: 18.0, maxSpeed: 30.0, accelRate: 0.20 },
+  pro: { label: 'Pro Rodeo', baseSpeed: 22.0, maxSpeed: 35.0, accelRate: 0.30 }
+};
+
+export const COUNTDOWN_SECONDS = 3.0;
+export const BOARD_HOLD_TO_START_SECONDS = 1.6;
+

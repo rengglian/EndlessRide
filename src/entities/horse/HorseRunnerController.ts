@@ -4,7 +4,9 @@ import {
   BASE_SPEED,
   MAX_SPEED,
   STEER_MAX_SPEED,
-  MAX_LATERAL_OFFSET
+  MAX_LATERAL_OFFSET,
+  DIFFICULTY_PRESETS,
+  type DifficultyPreset
 } from '../../config';
 import { HorseMesh } from './HorseMesh';
 import { GirlRiderEntity } from '../rider/GirlRiderEntity';
@@ -60,9 +62,13 @@ export class HorseRunnerController {
   // Kinematic parameters
   public prevDistance = 0;
   public distance = 0;
-  public speed = BASE_SPEED; // Fast initial gallop speed (65 km/h)
+  public baseSpeed = BASE_SPEED;
+  public maxSpeed = MAX_SPEED;
+  public accelRate = 0.2;
+  public speed = BASE_SPEED;
   public lateralOffset = 0; // u across track width [-3.5, 3.5]
   public lateralVelocity = 0;
+  public difficulty: DifficultyPreset = 'standard';
 
   private gallopPhase = 0;
   private isCrashed = false;
@@ -71,6 +77,17 @@ export class HorseRunnerController {
   public readonly steerMaxSpeed = STEER_MAX_SPEED; // Responsive high-speed lateral agility
   private readonly riderBaseY = 1.22;
   private readonly riderBaseZ = 0.0;
+
+  public setDifficulty(preset: DifficultyPreset): void {
+    this.difficulty = preset;
+    const config = DIFFICULTY_PRESETS[preset] || DIFFICULTY_PRESETS.standard;
+    this.baseSpeed = config.baseSpeed;
+    this.maxSpeed = config.maxSpeed;
+    this.accelRate = config.accelRate;
+    if (this.distance === 0) {
+      this.speed = this.baseSpeed;
+    }
+  }
 
   constructor(scene: THREE.Scene, spline: SplineTrack) {
     this.spline = spline;
@@ -179,7 +196,7 @@ export class HorseRunnerController {
     const ds = (this.speed * dt) / dPds;
     this.distance += ds;
 
-    this.speed = Math.min(MAX_SPEED, BASE_SPEED + 0.1 * Math.sqrt(Math.max(0, this.distance)));
+    this.speed = Math.min(this.maxSpeed, this.baseSpeed + this.accelRate * Math.sqrt(Math.max(0, this.distance)));
 
     // 2. Lateral Left/Right steering with snappy responsive damping
     const targetLateralVel = steer * this.steerMaxSpeed;
@@ -376,7 +393,7 @@ export class HorseRunnerController {
   public reset(): void {
     this.prevDistance = 0;
     this.distance = 0;
-    this.speed = 18.0;
+    this.speed = this.baseSpeed;
     this.lateralOffset = 0;
     this.lateralVelocity = 0;
     this.gallopPhase = 0;

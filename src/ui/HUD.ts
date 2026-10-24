@@ -1,4 +1,9 @@
+import type { DifficultyPreset } from '../config';
+import type { LeaderboardEntry } from '../input/InputManager';
+
 export class HUD {
+  // Top HUD elements
+  private playerBadgeElement: HTMLElement | null;
   private distElement: HTMLElement | null;
   private speedElement: HTMLElement | null;
   private highScoreElement: HTMLElement | null;
@@ -8,16 +13,33 @@ export class HUD {
   private collectiblesElement: HTMLElement | null;
   private pickupToastElement: HTMLElement | null;
 
+  // 3-2-1 Countdown overlay elements
+  private countdownOverlay: HTMLElement | null;
+  private countdownNumber: HTMLElement | null;
+  private countdownSubtitle: HTMLElement | null;
+  private countdownDetails: HTMLElement | null;
+
+  // Hands-free balance board hold bars
+  private startBoardHoldBar: HTMLElement | null;
+  private gameoverBoardHoldBar: HTMLElement | null;
+
+  // Modals & action buttons
   private startModal: HTMLElement | null;
   private startBtn: HTMLElement | null;
-
   private pauseModal: HTMLElement | null;
   private resumeBtn: HTMLElement | null;
-
   private gameoverModal: HTMLElement | null;
   private finalStatsElement: HTMLElement | null;
   private restartBtn: HTMLElement | null;
   private newRecordBadge: HTMLElement | null;
+
+  // Player & Difficulty controls
+  private playerNameInput: HTMLInputElement | null;
+  private playerPills: NodeListOf<HTMLButtonElement>;
+  private diffPills: NodeListOf<HTMLButtonElement>;
+  private leaderboardList: HTMLElement | null;
+  private gameoverLeaderboardList: HTMLElement | null;
+  private remoteUrlText: HTMLElement | null;
 
   // Cached display values to avoid layout thrashing and DOM writes every frame
   private lastDisplayedDist = -1;
@@ -28,12 +50,17 @@ export class HUD {
   private lastDisplayedApples = -1;
   private lastDisplayedHorseshoes = -1;
   private lastDisplayedBarPct = -1;
+  private lastDisplayedBoardHoldPct = -1;
+  private lastDisplayedCountdownSec = -1;
 
   private toastTimeoutId: number | null = null;
 
+  // Callbacks
   public onStart?: () => void;
   public onResume?: () => void;
   public onRestart?: () => void;
+  public onSelectPlayer?: (name: string) => void;
+  public onSelectDifficulty?: (diff: DifficultyPreset) => void;
 
   private onKeyDownBound = (e: KeyboardEvent): void => {
     if (e.code === 'Space' || e.code === 'Enter') {
@@ -60,6 +87,7 @@ export class HUD {
   };
 
   constructor() {
+    this.playerBadgeElement = document.getElementById('hud-player');
     this.distElement = document.getElementById('hud-distance');
     this.speedElement = document.getElementById('hud-speed');
     this.highScoreElement = document.getElementById('hud-high-score');
@@ -68,6 +96,14 @@ export class HUD {
     this.multiplierBarElement = document.getElementById('hud-multiplier-bar');
     this.collectiblesElement = document.getElementById('hud-collectibles');
     this.pickupToastElement = document.getElementById('hud-pickup-toast');
+
+    this.countdownOverlay = document.getElementById('countdown-overlay');
+    this.countdownNumber = document.getElementById('countdown-number');
+    this.countdownSubtitle = document.getElementById('countdown-subtitle');
+    this.countdownDetails = document.getElementById('countdown-details');
+
+    this.startBoardHoldBar = document.getElementById('start-board-hold-bar');
+    this.gameoverBoardHoldBar = document.getElementById('gameover-board-hold-bar');
 
     this.startModal = document.getElementById('start-modal');
     this.startBtn = document.getElementById('start-btn');
@@ -80,6 +116,20 @@ export class HUD {
     this.restartBtn = document.getElementById('restart-btn');
     this.newRecordBadge = document.getElementById('new-record-badge');
 
+    this.playerNameInput = document.getElementById('player-name-input') as HTMLInputElement | null;
+    this.playerPills = document.querySelectorAll('.player-pill');
+    this.diffPills = document.querySelectorAll('.diff-pill');
+    this.leaderboardList = document.getElementById('leaderboard-list');
+    this.gameoverLeaderboardList = document.getElementById('gameover-leaderboard-list');
+    this.remoteUrlText = document.getElementById('remote-url-text');
+
+    // Display actual remote companion URL based on current host
+    if (this.remoteUrlText && typeof window !== 'undefined') {
+      const host = window.location.hostname || 'localhost';
+      const port = window.location.port ? `:${window.location.port}` : '';
+      this.remoteUrlText.textContent = `http://${host}${port}/remote.html`;
+    }
+
     if (this.startBtn) {
       this.startBtn.addEventListener('click', this.onStartClickBound);
     }
@@ -90,7 +140,151 @@ export class HUD {
       this.restartBtn.addEventListener('click', this.onRestartClickBound);
     }
 
+    // Wire player selector pills
+    this.playerPills.forEach((pill) => {
+      pill.addEventListener('click', () => {
+        const name = pill.getAttribute('data-player');
+        if (name) {
+          this.setPlayerName(name);
+          this.onSelectPlayer?.(name);
+        }
+      });
+    });
+
+    // Wire player name text input
+    if (this.playerNameInput) {
+      this.playerNameInput.addEventListener('input', () => {
+        const name = this.playerNameInput?.value.trim() || 'Rider 1';
+        this.playerPills.forEach((p) => {
+          p.classList.toggle('active', p.getAttribute('data-player') === name);
+        });
+        this.onSelectPlayer?.(name);
+      });
+    }
+
+    // Wire difficulty selector pills
+    this.diffPills.forEach((pill) => {
+      pill.addEventListener('click', () => {
+        const diff = pill.getAttribute('data-diff') as DifficultyPreset | null;
+        if (diff) {
+          this.setDifficulty(diff);
+          this.onSelectDifficulty?.(diff);
+        }
+      });
+    });
+
     window.addEventListener('keydown', this.onKeyDownBound);
+  }
+
+  public setPlayerName(name: string): void {
+    if (this.playerNameInput && this.playerNameInput.value !== name) {
+      this.playerNameInput.value = name;
+    }
+    this.playerPills.forEach((p) => {
+      p.classList.toggle('active', p.getAttribute('data-player') === name);
+    });
+  }
+
+  public setDifficulty(diff: DifficultyPreset): void {
+    this.diffPills.forEach((p) => {
+      p.classList.toggle('active', p.getAttribute('data-diff') === diff);
+    });
+  }
+
+  public updatePlayerBadge(playerName: string, difficulty: string): void {
+    if (this.playerBadgeElement) {
+      const formattedDiff = difficulty.charAt(0).toUpperCase() + difficulty.slice(1);
+      this.playerBadgeElement.textContent = `🏇 ${playerName} · ${formattedDiff}`;
+    }
+  }
+
+  public showCountdown(seconds: number, playerName: string, diff: string): void {
+    if (this.countdownOverlay) {
+      this.countdownOverlay.classList.add('visible');
+    }
+    this.updateCountdown(seconds, playerName, diff);
+  }
+
+  public updateCountdown(seconds: number, playerName: string, diff: string): void {
+    const formattedDiff = diff.charAt(0).toUpperCase() + diff.slice(1);
+    const roundedCeil = Math.ceil(seconds);
+
+    if (roundedCeil !== this.lastDisplayedCountdownSec) {
+      this.lastDisplayedCountdownSec = roundedCeil;
+      if (this.countdownNumber) {
+        if (seconds <= 0.4) {
+          this.countdownNumber.textContent = 'RIDE!';
+          this.countdownNumber.style.color = '#34d399';
+        } else {
+          this.countdownNumber.textContent = roundedCeil.toString();
+          this.countdownNumber.style.color = '#38bdf8';
+        }
+      }
+    }
+
+    if (this.countdownSubtitle) {
+      this.countdownSubtitle.textContent = `Get Ready, ${playerName}! · Step onto the Balance Board`;
+    }
+    if (this.countdownDetails) {
+      this.countdownDetails.textContent = `${formattedDiff.toUpperCase()} DIFFICULTY`;
+    }
+  }
+
+  public hideCountdown(): void {
+    if (this.countdownOverlay) {
+      this.countdownOverlay.classList.remove('visible');
+    }
+    this.lastDisplayedCountdownSec = -1;
+  }
+
+  public updateBoardHoldProgress(progress: number): void {
+    const validProgress = Math.max(0, Math.min(1.0, progress));
+    const pct = Math.round(validProgress * 100);
+
+    if (pct !== this.lastDisplayedBoardHoldPct) {
+      this.lastDisplayedBoardHoldPct = pct;
+      if (this.startBoardHoldBar) {
+        this.startBoardHoldBar.style.width = `${pct}%`;
+      }
+      if (this.gameoverBoardHoldBar) {
+        this.gameoverBoardHoldBar.style.width = `${pct}%`;
+      }
+    }
+  }
+
+  private escapeHtml(str: string): string {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  public updateLeaderboard(entries: LeaderboardEntry[]): void {
+    const topEntries = entries.slice(0, 5);
+    const html = topEntries
+      .map((entry, idx) => {
+        const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
+        const safeName = this.escapeHtml(entry.name || 'Rider');
+        const diffBadge = entry.difficulty ? ` (${this.escapeHtml(entry.difficulty)})` : '';
+        return `
+          <div class="leaderboard-row">
+            <span class="lb-rank">${medal}</span>
+            <span class="lb-name">${safeName}${diffBadge}</span>
+            <span class="lb-score">${entry.score.toLocaleString()} pts</span>
+            <span class="lb-dist">${entry.distance.toLocaleString()}m</span>
+          </div>
+        `;
+      })
+      .join('');
+
+    if (this.leaderboardList) {
+      this.leaderboardList.innerHTML = html;
+    }
+    if (this.gameoverLeaderboardList) {
+      this.gameoverLeaderboardList.innerHTML = html;
+    }
   }
 
   public update(

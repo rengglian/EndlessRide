@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """
-Raspberry Pi Accelerometer Bridge for Endless Ride
-Reads an I2C accelerometer (MPU-6050, ADXL345, or simulated) on the Raspberry Pi
-and streams real-time tilt steering values over a local WebSocket to the browser game.
+Raspberry Pi Game & Sensor Hub for Endless Ride
+Serves as the central coordination hub connecting:
+1. Physical Tilt Hardware (M5Stack AtomS3 UDP @ 50 Hz & Raspberry Pi I2C MPU-6050)
+2. TV/Browser Client (Three.js WebGL game running on TV / NVIDIA Shield / PC)
+3. Smartphone Companion Remote (public/remote.html served via HTTP on :8080/remote)
+4. Persistent Room State, Difficulty Presets, Balance Board Tare, and Top-10 Leaderboard (scripts/leaderboard.json)
 
-Wiring on Raspberry Pi GPIO:
+Wiring on Raspberry Pi GPIO (Optional wired MPU-6050):
   - VCC  -> Pin 1 (3.3V)
   - GND  -> Pin 6 (GND)
   - SDA  -> Pin 3 (GPIO 2 / I2C1 SDA)
@@ -18,9 +21,11 @@ import asyncio
 import json
 import math
 import sys
+import os
 import argparse
 import struct
 import time
+import http
 
 try:
     import websockets
@@ -36,6 +41,80 @@ ACCEL_XOUT_H = 0x3B
 connected_clients = set()
 simulated_mode = False
 bus = None
+
+# Steering & Calibration State
+last_raw_steer = 0.0
+filtered_steer = 0.0
+last_atoms3_time = 0.0
+last_restart_state = 0
+
+# AtomS3 UDP Protocol Constants
+PACKET_MAGIC = 0x4552 # 'ER' in hex
+PACKET_FORMAT = "<HBBf" # uint16 magic (2B), uint8 seq (1B), uint8 restart (1B), float steer (4B) = 8 bytes
+PACKET_SIZE = struct.calcsize(PACKET_FORMAT)
+
+# Persistent State File
+STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "leaderboard.json")
+
+DEFAULT_STATE = {
+    "playerName": "Rider 1",
+    "players": ["Rider 1", "Alex", "Sam", "Kids"],
+    "difficulty": "standard",
+    "sensitivity": 1.0,
+    "calOffset": 0.0,
+    "gameState": "START",
+    "liveStats": {
+        "score": 0,
+        "distance": 0,
+        "multiplier": 1.0
+    },
+    "leaderboard": []
+}
+
+state = dict(DEFAULT_STATE)
+
+def load_state():
+    global state
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    for k, v in DEFAULT_STATE.items():
+                        state[k] = data.get(k, v)
+            print(f"[OK] Loaded room state from {STATE_FILE} ({len(state.get('leaderboard', []))} leaderboard entries)")
+            return
+        except Exception as e:
+            print(f"[WARN] Failed to read {STATE_FILE} ({e}); using defaults.")
+    save_state()
+
+def save_state():
+    try:
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)
+    except Exception as e:
+        print(f"[WARN] Failed to save state to {STATE_FILE}: {e}")
+
+def get_room_state_dict():
+    return {
+        "type": "room_state",
+        "playerName": state.get("playerName", "Rider 1"),
+        "players": state.get("players", ["Rider 1"]),
+        "difficulty": state.get("difficulty", "standard"),
+        "sensitivity": float(state.get("sensitivity", 1.0)),
+        "calOffset": float(state.get("calOffset", 0.0)),
+        "gameState": state.get("gameState", "START"),
+        "liveStats": state.get("liveStats", {"score": 0, "distance": 0, "multiplier": 1.0}),
+        "leaderboard": state.get("leaderboard", [])
+    }
+
+def get_room_state_json():
+    return json.dumps(get_room_state_dict())
+
+def broadcast_room_state():
+    if connected_clients:
+        msg = get_room_state_json()
+        websockets.broadcast(connected_clients, msg)
 
 def init_mpu6050():
     global bus
@@ -54,53 +133,34 @@ def read_mpu6050_raw():
     if bus is None:
         return 0.0, 0.0, 1.0
     try:
-        # Read 6 bytes of accel data
         data = bus.read_i2c_block_data(MPU6050_ADDR, ACCEL_XOUT_H, 6)
         ax = (data[0] << 8) | data[1]
         ay = (data[2] << 8) | data[3]
         az = (data[4] << 8) | data[5]
-        
-        # Convert to 16-bit signed
+
         if ax > 32767: ax -= 65536
         if ay > 32767: ay -= 65536
         if az > 32767: az -= 65536
 
-        # Convert to g (assuming +/- 2g scale: 16384 LSB/g)
         return ax / 16384.0, ay / 16384.0, az / 16384.0
     except Exception:
         return 0.0, 0.0, 1.0
 
-# Low-pass filter state
-filtered_steer = 0.0
-
 def compute_steer(ax, ay, az):
     global filtered_steer
-    # Calculate roll tilt angle around Y/Z axis in degrees
-    # When tilting left/right, ax experiences gravitational deflection:
-    # ax varies between -1.0g and +1.0g
-    # Map +/- 35 degrees tilt to +/- 1.0 steer output
     roll_rad = math.atan2(ax, math.sqrt(ay * ay + az * az))
     roll_deg = math.degrees(roll_rad)
-    
-    # Max tilt angle for full steer (e.g. 28 degrees)
     max_tilt_deg = 28.0
-    raw_steer = max(-1.0, min(1.0, roll_deg / max_tilt_deg))
-    
-    # Deadzone
-    if abs(raw_steer) < 0.06:
-        raw_steer = 0.0
-        
-    # Exponential smoothing filter (alpha = 0.35)
-    filtered_steer += (raw_steer - filtered_steer) * 0.35
+    raw = max(-1.0, min(1.0, roll_deg / max_tilt_deg))
+    if abs(raw) < 0.06:
+        raw = 0.0
+    filtered_steer += (raw - filtered_steer) * 0.35
     return filtered_steer
 
-# AtomS3 UDP Protocol Constants
-PACKET_MAGIC = 0x4552 # 'ER' in hex
-PACKET_FORMAT = "<HBBf" # uint16 magic (2B), uint8 seq (1B), uint8 restart (1B), float steer (4B) = 8 bytes
-PACKET_SIZE = struct.calcsize(PACKET_FORMAT)
-
-last_atoms3_time = 0.0
-last_restart_state = 0
+def apply_calibration(raw_val):
+    cal = state.get("calOffset", 0.0)
+    sens = state.get("sensitivity", 1.0)
+    return max(-1.0, min(1.0, (raw_val - cal) * sens))
 
 class AtomS3UDPProtocol(asyncio.DatagramProtocol):
     def connection_made(self, transport):
@@ -108,29 +168,36 @@ class AtomS3UDPProtocol(asyncio.DatagramProtocol):
         print("[OK] AtomS3 UDP receiver active for 8-byte ControllerPacket datagrams")
 
     def datagram_received(self, data, addr):
-        global last_atoms3_time, last_restart_state
+        global last_atoms3_time, last_restart_state, last_raw_steer
         if len(data) == PACKET_SIZE:
             magic, seq, restart, steer = struct.unpack(PACKET_FORMAT, data)
             if magic == PACKET_MAGIC:
                 last_atoms3_time = time.monotonic()
+                last_raw_steer = steer
+                calibrated = apply_calibration(steer)
+
                 if connected_clients:
                     msg = json.dumps({
                         "type": "sensor",
-                        "steer": round(steer, 3),
+                        "steer": round(calibrated, 3),
+                        "rawSteer": round(last_raw_steer, 3),
+                        "calOffset": round(state.get("calOffset", 0.0), 3),
                         "seq": seq
                     })
                     websockets.broadcast(connected_clients, msg)
+
                     # Edge-detect restart flag across repeated UDP packets
                     if restart and not last_restart_state:
                         btn_msg = json.dumps({
                             "type": "button",
-                            "action": "restart"
+                            "action": "start_or_restart"
                         })
                         websockets.broadcast(connected_clients, btn_msg)
+
                 last_restart_state = restart
 
 async def sensor_loop():
-    global filtered_steer
+    global filtered_steer, last_raw_steer
     sim_t = 0.0
 
     while True:
@@ -140,23 +207,26 @@ async def sensor_loop():
             continue
 
         if simulated_mode:
-            # Simulate a smooth steering wave for testing
             sim_t += 0.05
             ax = math.sin(sim_t * 1.5) * 0.6
             ay, az = 0.0, 0.8
-            steer = compute_steer(ax, ay, az)
+            raw_s = compute_steer(ax, ay, az)
         elif bus is not None:
             ax, ay, az = read_mpu6050_raw()
-            steer = compute_steer(ax, ay, az)
+            raw_s = compute_steer(ax, ay, az)
         else:
-            # No physical sensor and simulation not enabled: wait idle without broadcasting fake input
             await asyncio.sleep(0.05)
             continue
-        
+
+        last_raw_steer = raw_s
+        calibrated = apply_calibration(raw_s)
+
         if connected_clients:
             msg = json.dumps({
                 "type": "sensor",
-                "steer": round(steer, 3),
+                "steer": round(calibrated, 3),
+                "rawSteer": round(last_raw_steer, 3),
+                "calOffset": round(state.get("calOffset", 0.0), 3),
                 "accel": {
                     "x": round(ax, 3),
                     "y": round(ay, 3),
@@ -168,22 +238,172 @@ async def sensor_loop():
         await asyncio.sleep(0.02) # 50 Hz sensor sampling
 
 async def handle_client(websocket):
-    print(f"[OK] Browser client connected: {websocket.remote_address}")
+    global last_raw_steer
+    remote_addr = getattr(websocket, "remote_address", "client")
+    print(f"[OK] Client connected: {remote_addr}")
     connected_clients.add(websocket)
+
+    # Send initial room state immediately upon connection
     try:
-        await websocket.wait_closed()
+        await websocket.send(get_room_state_json())
+    except Exception as e:
+        print(f"[WARN] Failed to send initial room state: {e}")
+
+    try:
+        async for raw_message in websocket:
+            try:
+                msg = json.loads(raw_message)
+                mtype = msg.get("type")
+
+                if mtype == "get_state":
+                    await websocket.send(get_room_state_json())
+
+                elif mtype == "select_player":
+                    name = str(msg.get("playerName", "")).strip()[:18]
+                    if name:
+                        state["playerName"] = name
+                        if name not in state["players"]:
+                            state["players"].append(name)
+                        save_state()
+                        broadcast_room_state()
+
+                elif mtype == "set_config":
+                    diff = msg.get("difficulty")
+                    if diff in ("relaxed", "standard", "pro"):
+                        state["difficulty"] = diff
+
+                    sens = msg.get("sensitivity")
+                    if isinstance(sens, (int, float)):
+                        state["sensitivity"] = round(max(0.5, min(1.8, float(sens))), 2)
+
+                    save_state()
+                    broadcast_room_state()
+
+                elif mtype == "calibrate":
+                    # Zero / Tare balance board at current raw tilt angle
+                    state["calOffset"] = round(max(-0.8, min(0.8, last_raw_steer)), 3)
+                    save_state()
+                    broadcast_room_state()
+                    print(f"[CALIBRATE] Balance board zero set to offset {state['calOffset']:.3f}")
+
+                elif mtype == "reset_calibration":
+                    state["calOffset"] = 0.0
+                    save_state()
+                    broadcast_room_state()
+                    print("[CALIBRATE] Balance board calibration reset to 0.0")
+
+                elif mtype == "command":
+                    action = msg.get("action")
+                    if action in ("start_or_restart", "pause", "resume", "restart", "force_restart"):
+                        cmd_msg = json.dumps({"type": "button", "action": action})
+                        websockets.broadcast(connected_clients, cmd_msg)
+                        print(f"[CMD] Broadcasted action: {action}")
+
+                elif mtype == "game_state":
+                    gstate = msg.get("state")
+                    if gstate:
+                        state["gameState"] = gstate
+                    stats = msg.get("liveStats")
+                    if isinstance(stats, dict):
+                        state["liveStats"] = {
+                            "score": int(stats.get("score", 0)),
+                            "distance": int(stats.get("distance", 0)),
+                            "multiplier": float(stats.get("multiplier", 1.0))
+                        }
+                    else:
+                        state["liveStats"] = {
+                            "score": int(msg.get("score", state["liveStats"].get("score", 0))),
+                            "distance": int(msg.get("distance", state["liveStats"].get("distance", 0))),
+                            "multiplier": float(msg.get("multiplier", state["liveStats"].get("multiplier", 1.0)))
+                        }
+                    broadcast_room_state()
+
+                elif mtype == "submit_score":
+                    pname = str(msg.get("playerName", state["playerName"])).strip()[:18] or "Rider"
+                    score = int(msg.get("score", 0))
+                    distance = int(msg.get("distance", 0))
+                    diff = str(msg.get("difficulty", state["difficulty"]))
+
+                    # Keep top 10 highest scores sorted descending
+                    state["leaderboard"].append({
+                        "name": pname,
+                        "score": score,
+                        "distance": distance,
+                        "difficulty": diff
+                    })
+                    state["leaderboard"].sort(key=lambda x: x["score"], reverse=True)
+                    state["leaderboard"] = state["leaderboard"][:10]
+                    save_state()
+                    broadcast_room_state()
+                    print(f"[LEADERBOARD] Recorded score for {pname}: {score} pts ({distance} m)")
+
+            except Exception as ex:
+                print(f"[WARN] Error handling client message: {ex}")
     finally:
-        connected_clients.remove(websocket)
-        print("Client disconnected.")
+        connected_clients.discard(websocket)
+        print(f"Client disconnected: {remote_addr}")
+
+def process_http_request(*args, **kwargs):
+    """
+    HTTP convenience handler serving /remote or /remote.html directly on port 8080.
+    Supports both legacy (path, request_headers) and modern (connection, request) signatures.
+    """
+    try:
+        path = None
+        connection = None
+        request = None
+
+        if len(args) >= 2:
+            arg0, arg1 = args[0], args[1]
+            if isinstance(arg0, str):
+                path = arg0
+            elif hasattr(arg1, "path"):
+                connection = arg0
+                request = arg1
+                path = getattr(request, "path", None)
+            elif hasattr(arg0, "path"):
+                path = getattr(arg0, "path", None)
+
+        if not path and "path" in kwargs:
+            path = kwargs["path"]
+
+        if path:
+            raw_path = path.split("?")[0].rstrip("/")
+            if raw_path in ("/remote", "/remote.html"):
+                html_path = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "public",
+                    "remote.html"
+                )
+                if os.path.exists(html_path):
+                    with open(html_path, "rb") as f:
+                        body = f.read()
+                    headers = [
+                        ("Content-Type", "text/html; charset=utf-8"),
+                        ("Content-Length", str(len(body))),
+                        ("Connection", "close"),
+                        ("Access-Control-Allow-Origin", "*")
+                    ]
+                    if connection and hasattr(connection, "respond"):
+                        return connection.respond(http.HTTPStatus.OK, body)
+                    return (http.HTTPStatus.OK, headers, body)
+    except Exception as e:
+        print(f"[HTTP] Error in process_http_request: {e}")
+
+    # Return None so websockets proceeds with regular WebSocket handshake
+    return None
 
 async def main():
-    parser = argparse.ArgumentParser(description="Raspberry Pi Accelerometer Bridge & AtomS3 UDP Gateway")
+    parser = argparse.ArgumentParser(description="Raspberry Pi Game & Sensor Hub for Endless Ride")
     parser.add_argument("--simulate", action="store_true", help="Run in simulation mode without physical I2C sensor")
     parser.add_argument("--port", type=int, default=8080, help="WebSocket and UDP port (default: 8080)")
     args = parser.parse_args()
 
     global simulated_mode
     simulated_mode = args.simulate
+
+    # Load persistent room state and leaderboard
+    load_state()
 
     if not simulated_mode:
         has_sensor = init_mpu6050()
@@ -197,10 +417,26 @@ async def main():
         local_addr=("0.0.0.0", args.port)
     )
 
-    print(f"[INFO] Starting WebSocket & UDP Sensor Bridge on 0.0.0.0:{args.port} (50 Hz)")
+    print(f"[INFO] Starting Endless Ride Game Hub & WebSocket on 0.0.0.0:{args.port}")
+    print(f"[INFO] Smartphone Remote App accessible at: http://<pi-ip>:{args.port}/remote")
     print("Press Ctrl+C to stop.")
 
-    server = await websockets.serve(handle_client, "0.0.0.0", args.port)
+    # Wrap process_request safely for websockets.serve
+    try:
+        server = await websockets.serve(
+            handle_client,
+            "0.0.0.0",
+            args.port,
+            process_request=process_http_request
+        )
+    except TypeError:
+        # Fallback if process_request is not supported in an older websockets version
+        server = await websockets.serve(
+            handle_client,
+            "0.0.0.0",
+            args.port
+        )
+
     try:
         await asyncio.gather(server.wait_closed(), sensor_loop())
     finally:

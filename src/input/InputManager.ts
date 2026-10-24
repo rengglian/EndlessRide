@@ -1,3 +1,22 @@
+import type { DifficultyPreset } from '../config';
+
+export interface LeaderboardEntry {
+  name: string;
+  score: number;
+  distance: number;
+  difficulty?: string;
+}
+
+export interface RoomStatePayload {
+  playerName: string;
+  players: string[];
+  difficulty: DifficultyPreset;
+  sensitivity: number;
+  calOffset: number;
+  gameState?: string;
+  leaderboard: LeaderboardEntry[];
+}
+
 export class InputManager {
   private leftPressed = false;
   private rightPressed = false;
@@ -10,6 +29,7 @@ export class InputManager {
   private sensorSteer = 0;
   private lastSensorPacketTime = 0;
   public onButtonAction?: (action: string) => void;
+  public onRoomState?: (state: RoomStatePayload) => void;
 
   private reconnectTimeoutId: number | null = null;
   private isDisposed = false;
@@ -31,13 +51,8 @@ export class InputManager {
   private initSensorWebSocket(): void {
     if (this.isDisposed) return;
 
-    // Only connect if '?sensor' query parameter is explicitly provided
-    // e.g. http://localhost:3000/?sensor or http://localhost:3000/?sensor=192.168.1.50
+    // Connect to Raspberry Pi Sensor Bridge / Hub automatically on LAN or port 8080
     const urlParams = new URLSearchParams(window.location.search);
-    if (!urlParams.has('sensor')) {
-      return;
-    }
-
     const sensorParam = urlParams.get('sensor');
     const sensorHost = (sensorParam && sensorParam.trim().length > 0)
       ? sensorParam.trim()
@@ -48,7 +63,7 @@ export class InputManager {
       this.ws = new WebSocket(wsUrl);
       this.ws.onopen = () => {
         this.isSensorConnected = true;
-        console.info(`[Sensor] Connected to Sensor Bridge at ${wsUrl}`);
+        console.info(`[Sensor] Connected to Hub / Sensor Bridge at ${wsUrl}`);
       };
       this.ws.onmessage = (event) => {
         try {
@@ -58,6 +73,8 @@ export class InputManager {
             this.lastSensorPacketTime = performance.now();
           } else if (data && data.type === 'button' && this.onButtonAction) {
             this.onButtonAction(data.action || 'restart');
+          } else if (data && data.type === 'room_state' && this.onRoomState) {
+            this.onRoomState(data as RoomStatePayload);
           }
         } catch {
           // Ignore parse errors
@@ -66,7 +83,7 @@ export class InputManager {
       this.ws.onclose = () => {
         this.isSensorConnected = false;
         if (!this.isDisposed) {
-          // Retry connection every 4 seconds only if ?sensor was explicitly requested
+          // Retry connection every 4 seconds
           this.reconnectTimeoutId = window.setTimeout(() => this.initSensorWebSocket(), 4000);
         }
       };
@@ -76,6 +93,49 @@ export class InputManager {
     } catch {
       this.isSensorConnected = false;
     }
+  }
+
+  private sendJson(payload: unknown): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(JSON.stringify(payload));
+      } catch {
+        // Ignore send errors
+      }
+    }
+  }
+
+  public sendSelectPlayer(playerName: string): void {
+    this.sendJson({ type: 'select_player', playerName });
+  }
+
+  public sendSetConfig(difficulty: DifficultyPreset, sensitivity?: number): void {
+    const payload: Record<string, unknown> = { type: 'set_config', difficulty };
+    if (sensitivity !== undefined) {
+      payload.sensitivity = sensitivity;
+    }
+    this.sendJson(payload);
+  }
+
+  public sendGameState(state: string, score: number, distance: number, multiplier: number): void {
+    this.sendJson({
+      type: 'game_state',
+      state,
+      score: Math.floor(score),
+      distance: Math.floor(distance),
+      multiplier: Math.round(multiplier * 10) / 10
+    });
+  }
+
+  public sendScore(entry: {
+    playerName: string;
+    score: number;
+    distance: number;
+    apples: number;
+    horseshoes: number;
+    difficulty: string;
+  }): void {
+    this.sendJson({ type: 'submit_score', ...entry });
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
@@ -98,7 +158,7 @@ export class InputManager {
   private isInteractiveTarget(target: EventTarget | null): boolean {
     return Boolean(
       (target as HTMLElement | null)?.closest?.(
-        'button, #gameover-modal, #start-modal, #pause-modal, #dbg-toggle-btn'
+        'button, input, select, a, .player-pill, .diff-pill, #gameover-modal, #start-modal, #pause-modal, #dbg-toggle-btn'
       )
     );
   }

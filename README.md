@@ -54,6 +54,12 @@ A high-performance, mobile-optimized 3D endless horse runner game built with **T
   - Opt-in WebSocket gateway (`?sensor=<host-ip>`) with 350ms staleness safety guard.
   - Native Gamepad API support (Left Stick / D-Pad).
 
+- **Headless Raspberry Pi Hub & Smartphone Companion Remote**:
+  - Centralized headless Python game hub (`scripts/sensor_bridge.py`) coordinating large-screen TV displays (NVIDIA Shield / Android TV / Smart TV / Desktop browser), physical balance board motion sensors, and smartphone remotes.
+  - Built-in HTTP server directly serving the mobile **Companion Remote App** (`public/remote.html`) on `http://<pi-ip>:8080/remote`.
+  - Real-time Balance Board **Tare / Zero neutral** calibration and sensitivity tuning with live Bubble Level visual tilt feedback.
+  - Persistent room state and Top-10 Leaderboard (`scripts/leaderboard.json`) with active rider profiles and difficulty presets.
+
 ---
 
 ## 🚀 Quickstart
@@ -124,6 +130,15 @@ npm run preview
 - **Tap / Hold Right Half of Screen**: Steer Right (+1.0)
 - **Tap Button**: Start game, Pause, or Restart after Game Over (UI button touches are automatically prioritized).
 
+### 4. Smartphone Companion Remote (`/remote.html`)
+
+For arcade and TV setups, any smartphone on the local network can act as a companion controller by opening `http://<pi-ip>:8080/remote`:
+- **Big-Thumb Controls**: Context-aware Start (with 3-2-1 countdown), Pause, Resume, and Quick Restart.
+- **Rider Profiles**: Select active rider (Alice, Bob, Charlie, or custom) before starting a ride.
+- **Difficulty Selection**: Switch game pacing (`Relaxed` 14 m/s, `Standard` 18 m/s, `Pro` 22 m/s).
+- **Bubble Level & Balance Board Tare**: Visual tilt gauge displaying current angle, one-tap **Zero / Tare** button to set the neutral baseline, and sensitivity tuning slider (`0.5x` to `1.8x`).
+- **Persistent Leaderboard**: Live Top-10 leaderboard displaying rank, rider name, score, distance, and difficulty badge.
+
 ---
 
 ## 🕹️ Physical Hardware Motion Controllers
@@ -132,17 +147,23 @@ Endless Ride features native support for physical tilt motion controllers, trans
 
 ```
 +--------------------------+          +-------------------------+          +-------------------------+
-|   M5Stack AtomS3         |  WiFi    |   Raspberry Pi / Host   |  Local   |   Browser Client        |
-|   (ESP32-S3 + BMI270)    |  UDP     |   scripts/              |  Web-    |   Endless Ride          |
-|   Tilt Steering Controller| -------->|   sensor_bridge.py      | -------->|   WebGL Engine          |
-|   (8-byte binary datagram)| :8080   |   (WebSocket Gateway)   | :8080    |   (?sensor=<host-ip>)   |
+|   M5Stack AtomS3         |  WiFi    |   Headless Raspberry Pi |  Local   |   Living Room TV / PC   |
+|   (ESP32-S3 + BMI270)    |  UDP     |   scripts/              |  Web-    |   (NVIDIA Shield / TV)  |
+|   Tilt Reins / Board     | -------->|   sensor_bridge.py      | -------->|   Endless Ride WebGL    |
+|   (8-byte binary UDP)    | :8080    |   Game & Sensor Hub     | Socket   |   (?sensor=<pi-ip>)     |
 +--------------------------+          +-------------------------+          +-------------------------+
-                                                   ^
-+--------------------------+                       |
-|   Raspberry Pi GPIO      |  I2C Bus 1            |
-|   MPU-6050 Accelerometer | ----------------------+
-|   (Wired Tilt Sensor)    |  (0x68)
-+--------------------------+
+                                              |           ^
++--------------------------+                  |           | WebSocket
+|   Raspberry Pi GPIO      |  I2C Bus 1       | HTTP      | (Commands, State,
+|   MPU-6050 Accelerometer | -----------------+ :8080     |  Leaderboard)
+|   (Wired Balance Board)  |  (0x68)          v           v
++--------------------------+          +-------------------------+
+                                      |   Smartphone Companion  |
+                                      |   Remote Web App        |
+                                      |   (public/remote.html)  |
+                                      |   http://<pi-ip>:8080/  |
+                                      |   remote                |
+                                      +-------------------------+
 ```
 
 ### Option A: M5Stack AtomS3 Wireless Rein Controller
@@ -156,33 +177,44 @@ The `scripts/m5stack_atoms3_reins/` sketch turns an ultra-compact **M5Stack Atom
 - **Captive Portal Wi-Fi Provisioning**: If unconfigured or Wi-Fi fails, creates an access point `AtomS3-Setup` at `192.168.4.1` with a mobile-friendly setup page.
 - **Runtime Target IP Configuration**: Access `http://<atoms3-ip>/` in any browser on the local network to re-point the UDP destination IP without restarting.
 
-### Option B: Raspberry Pi I2C Accelerometer Bridge
+### Option B: Headless Raspberry Pi Game Hub, Balance Board & Companion Remote
 
-The Python bridge (`scripts/sensor_bridge.py`) reads tilt angles from an MPU-6050 6-axis IMU over the Raspberry Pi's I2C bus and broadcasts steering values over a local WebSocket server at `ws://<pi-ip>:8080`.
+The Python hub (`scripts/sensor_bridge.py`) serves as the central orchestration hub for arcade and living room TV installations (e.g., NVIDIA Shield TV, Android TV, or mini PC connected to a television):
 
-#### Running the Bridge
+1. **Multi-Input Sensor Bridge**: Concurrently ingests wired I2C MPU-6050 balance board accelerometer readings (`/dev/i2c-1`) and wireless M5Stack AtomS3 50 Hz UDP datagrams (`0x4552`) on port 8080.
+2. **Dual WebSocket & HTTP Server**: Simultaneously coordinates real-time bidirectional WebSocket telemetry with game clients and serves the Smartphone Companion Remote (`public/remote.html`) directly over HTTP at `http://<pi-ip>:8080/remote` or `/remote.html`.
+3. **Dynamic Balance Board Tare / Zero Calibration**: Players can mount the physical balance board and tap **Zero / Tare** on their phone to offset the neutral resting position. Calibrated steering is computed as $\text{steer} = \text{clamp}((\text{rawSteer} - \text{calOffset}) \cdot \text{sensitivity}, -1.0, 1.0)$.
+4. **Persistent Room State & Leaderboard**: Stores and broadcasts room configurations (`playerName`, `difficulty`, `sensitivity`, `calOffset`) and a persistent Top-10 Leaderboard in `scripts/leaderboard.json`.
+
+#### Running the Hub
 
 ```bash
-# Install Python dependencies
+# Install Python dependencies on Raspberry Pi
 pip3 install websockets smbus2
 
-# Run sensor bridge on Raspberry Pi
+# Run headless game & sensor hub
 python3 scripts/sensor_bridge.py
 
-# Optional: Run without physical sensor in simulation mode
+# Optional: Run in simulation mode (sine wave tilt) without physical sensors
 python3 scripts/sensor_bridge.py --simulate
 
 # Optional: Specify custom port (default: 8080)
 python3 scripts/sensor_bridge.py --port 8080
 ```
 
-#### Connecting in Browser
+#### Living Room / Arcade TV Setup Workflow
 
-The browser WebSocket connection is **strictly opt-in**. Point your browser to the game with the `?sensor=<host>` URL query parameter:
-
-```
-http://localhost:3000/?sensor=192.168.1.50
-```
+1. **Start the Hub**: Run `python3 scripts/sensor_bridge.py` on the Raspberry Pi (or host PC).
+2. **Launch the Game on TV**: On the NVIDIA Shield TV, Android TV browser, or desktop, open:
+   ```
+   http://<game-host>:3000/?sensor=192.168.1.50
+   ```
+   *(Replace `192.168.1.50` with your Raspberry Pi's local IP address).*
+3. **Open Companion Remote on Phone**: On any smartphone connected to the same Wi-Fi, open:
+   ```
+   http://192.168.1.50:8080/remote
+   ```
+4. **Step onto Balance Board & Tare**: Step on the board, keep balance neutral, and tap **Zero / Tare** on the phone. Select your rider profile (e.g. Alice), pick your difficulty, and tap **Start Ride (3-2-1)**!
 
 A built-in **350ms staleness timeout** ensures steering automatically resets to 0.0 if packets stop arriving.
 
@@ -219,9 +251,11 @@ EndlessRide/
 ├── vite.config.ts               # Vite configuration with ES module worker support
 ├── improvements.md              # Project review, implemented fixes, and roadmap
 ├── public/
-│   └── assets/                  # glTF/GLB 3D character and animal models
+│   ├── assets/                  # glTF/GLB 3D character and animal models
+│   └── remote.html              # Smartphone Companion Remote & Leaderboard web app
 ├── scripts/
-│   ├── sensor_bridge.py         # Python WebSocket/UDP IMU sensor bridge
+│   ├── sensor_bridge.py         # Headless Raspberry Pi Game & Sensor Hub (WebSocket + HTTP + UDP)
+│   ├── leaderboard.json         # Persistent room state & Top-10 Leaderboard
 │   └── m5stack_atoms3_reins/    # Arduino firmware for wireless M5Stack AtomS3 controller
 │       └── m5stack_atoms3_reins.ino
 └── src/

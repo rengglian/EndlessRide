@@ -5,7 +5,7 @@ import { ObstacleManager } from '../obstacles/ObstacleManager';
 import { CollectibleManager } from '../collectibles/CollectibleManager';
 import { HorseRunnerController } from '../entities/horse/HorseRunnerController';
 import { RunnerCamera } from '../camera/RunnerCamera';
-import { InputManager } from '../input/InputManager';
+import { InputManager, type LeaderboardEntry } from '../input/InputManager';
 import { HUD } from '../ui/HUD';
 import { DebugHUD } from '../ui/DebugHUD';
 import {
@@ -15,17 +15,30 @@ import {
   HORSESHOE_MULTIPLIER_STEP,
   MAX_SCORE_MULTIPLIER,
   MULTIPLIER_HOLD_DURATION,
-  MULTIPLIER_DECAY_RATE
+  MULTIPLIER_DECAY_RATE,
+  COUNTDOWN_SECONDS,
+  BOARD_HOLD_TO_START_SECONDS,
+  type DifficultyPreset
 } from '../config';
 
 export enum GameState {
   START = 'START',
+  COUNTDOWN = 'COUNTDOWN',
   RUNNING = 'RUNNING',
   PAUSED = 'PAUSED',
   GAME_OVER = 'GAME_OVER'
 }
 
 const HIGH_SCORE_KEY = 'endless_ride_high_score';
+const LEADERBOARD_KEY = 'endless_ride_leaderboard';
+
+const DEFAULT_LEADERBOARD: LeaderboardEntry[] = [
+  { name: 'Champion', score: 2500, distance: 1200, difficulty: 'pro' },
+  { name: 'TrailBlazer', score: 1800, distance: 950, difficulty: 'standard' },
+  { name: 'Rider 1', score: 1200, distance: 700, difficulty: 'standard' },
+  { name: 'SwiftHoof', score: 850, distance: 550, difficulty: 'relaxed' },
+  { name: 'Meadow', score: 500, distance: 350, difficulty: 'relaxed' }
+];
 
 export class Engine {
   public scene: THREE.Scene;
@@ -54,6 +67,15 @@ export class Engine {
   private accumulator = 0;
   private rafId = 0;
   public highScore = 0;
+
+  // Player & Difficulty Presets
+  public playerName = 'Rider 1';
+  public difficulty: DifficultyPreset = 'standard';
+  public countdownTimer = 0;
+  public boardHoldTimer = 0;
+  public leaderboard: LeaderboardEntry[] = [];
+  private lastTelemetrySyncTime = 0;
+  private wakeLock: unknown = null;
 
   // Score & Dynamic Multiplier State
   public score = 0;
@@ -129,7 +151,7 @@ export class Engine {
     this.hud = new HUD();
     this.debugHud = new DebugHUD();
 
-    // 6. High Score Initialization from LocalStorage
+    // 6. High Score & Leaderboard Initialization from LocalStorage
     try {
       const stored = localStorage.getItem(HIGH_SCORE_KEY);
       if (stored) {
@@ -140,14 +162,52 @@ export class Engine {
     }
     this.hud.updateHighScore(this.highScore);
 
+    try {
+      const storedLb = localStorage.getItem(LEADERBOARD_KEY);
+      if (storedLb) {
+        this.leaderboard = JSON.parse(storedLb);
+      } else {
+        this.leaderboard = [...DEFAULT_LEADERBOARD];
+      }
+    } catch {
+      this.leaderboard = [...DEFAULT_LEADERBOARD];
+    }
+    this.hud.updateLeaderboard(this.leaderboard);
+
+    // Initialize player name and difficulty preset
+    this.horseController.setDifficulty(this.difficulty);
+    this.hud.setPlayerName(this.playerName);
+    this.hud.setDifficulty(this.difficulty);
+    this.hud.updatePlayerBadge(this.playerName, this.difficulty);
+
     // 7. Attach User Actions & State Transitions
     this.hud.onStart = () => this.startRun();
     this.hud.onResume = () => this.resume();
     this.hud.onRestart = () => this.restart();
+    this.hud.onSelectPlayer = (name) => this.setPlayerName(name);
+    this.hud.onSelectDifficulty = (diff) => this.setDifficulty(diff);
+
+    // Bidirectional WebSocket Room State Sync from Raspberry Pi hub / Remote
+    this.inputManager.onRoomState = (roomState) => {
+      if (roomState.playerName && roomState.playerName !== this.playerName) {
+        this.setPlayerName(roomState.playerName, false);
+      }
+      if (roomState.difficulty && roomState.difficulty !== this.difficulty) {
+        this.setDifficulty(roomState.difficulty, false);
+      }
+      if (roomState.leaderboard && roomState.leaderboard.length > 0) {
+        this.leaderboard = roomState.leaderboard;
+        this.hud.updateLeaderboard(this.leaderboard);
+      }
+    };
 
     // Guard hardware / keyboard restart actions so they never wipe a live run mid-game!
     this.inputManager.onButtonAction = (action) => {
-      if (action === 'restart' || action === 'start_or_restart') {
+      if (action === 'force_restart') {
+        this.hud.hideStart();
+        this.hud.hidePause();
+        this.restart();
+      } else if (action === 'restart' || action === 'start_or_restart') {
         if (this.state === GameState.GAME_OVER) {
           this.restart();
         } else if (this.state === GameState.START) {
@@ -157,6 +217,8 @@ export class Engine {
         }
       } else if (action === 'pause') {
         this.togglePause();
+      } else if (action === 'resume') {
+        this.resume();
       }
     };
 
@@ -164,9 +226,42 @@ export class Engine {
     this.horseController.getTransform(this.horsePosTmp, this.horseTangentTmp);
     this.runnerCamera.update(this.horsePosTmp, this.horseTangentTmp, this.horseController.speed, 0.016, 0);
 
-    // 8. Event Listeners
+    // 8. Event Listeners & Screen Wake Lock
     window.addEventListener('resize', this.onResizeBound);
     document.addEventListener('visibilitychange', this.onVisibilityChangeBound);
+    this.requestWakeLock();
+  }
+
+  public setPlayerName(name: string, syncToServer = true): void {
+    this.playerName = name || 'Rider 1';
+    this.hud.setPlayerName(this.playerName);
+    this.hud.updatePlayerBadge(this.playerName, this.difficulty);
+    if (syncToServer) {
+      this.inputManager.sendSelectPlayer(this.playerName);
+    }
+  }
+
+  public setDifficulty(diff: DifficultyPreset, syncToServer = true): void {
+    this.difficulty = diff;
+    this.horseController.setDifficulty(diff);
+    this.hud.setDifficulty(diff);
+    this.hud.updatePlayerBadge(this.playerName, this.difficulty);
+    if (syncToServer) {
+      this.inputManager.sendSetConfig(diff);
+    }
+  }
+
+  private async requestWakeLock(): Promise<void> {
+    try {
+      if (typeof navigator !== 'undefined' && 'wakeLock' in navigator && (navigator as any).wakeLock) {
+        this.wakeLock = await (navigator as any).wakeLock.request('screen');
+        (this.wakeLock as any)?.addEventListener?.('release', () => {
+          this.wakeLock = null;
+        });
+      }
+    } catch {
+      // Ignore wake lock denial
+    }
   }
 
   public start(): void {
@@ -175,6 +270,7 @@ export class Engine {
 
     this.state = GameState.START;
     this.hud.showStart();
+    this.inputManager.sendGameState(this.state, this.score, this.horseController.distance, this.multiplier);
 
     this.lastTime = performance.now();
     this.rafId = requestAnimationFrame(this.tick);
@@ -182,15 +278,22 @@ export class Engine {
 
   public startRun(): void {
     this.hud.hideStart();
-    this.state = GameState.RUNNING;
+    this.boardHoldTimer = 0;
+    this.hud.updateBoardHoldProgress(0);
+
+    this.state = GameState.COUNTDOWN;
+    this.countdownTimer = COUNTDOWN_SECONDS;
+    this.hud.showCountdown(this.countdownTimer, this.playerName, this.difficulty);
     this.lastTime = performance.now();
     this.accumulator = 0;
+    this.inputManager.sendGameState(this.state, this.score, this.horseController.distance, this.multiplier);
   }
 
   public pause(): void {
-    if (this.state !== GameState.RUNNING) return;
+    if (this.state !== GameState.RUNNING && this.state !== GameState.COUNTDOWN) return;
     this.state = GameState.PAUSED;
     this.hud.showPause();
+    this.inputManager.sendGameState(this.state, this.score, this.horseController.distance, this.multiplier);
   }
 
   public resume(): void {
@@ -199,6 +302,7 @@ export class Engine {
     this.state = GameState.RUNNING;
     this.lastTime = performance.now();
     this.accumulator = 0;
+    this.inputManager.sendGameState(this.state, this.score, this.horseController.distance, this.multiplier);
   }
 
   public togglePause(): void {
@@ -210,8 +314,12 @@ export class Engine {
   }
 
   private onVisibilityChange(): void {
-    if (document.hidden && this.state === GameState.RUNNING) {
-      this.pause();
+    if (document.hidden) {
+      if (this.state === GameState.RUNNING) {
+        this.pause();
+      }
+    } else {
+      this.requestWakeLock();
     }
   }
 
@@ -227,12 +335,63 @@ export class Engine {
 
     const steer = this.inputManager.getSteer();
 
+    // Hands-Free Balance Board Tilt-to-Start / Restart gesture check
+    if (this.state === GameState.START || this.state === GameState.GAME_OVER) {
+      if (Math.abs(steer) >= 0.65) {
+        this.boardHoldTimer += dt;
+      } else {
+        this.boardHoldTimer = Math.max(0, this.boardHoldTimer - dt * 2.0);
+      }
+      const holdProgress = Math.min(1.0, this.boardHoldTimer / BOARD_HOLD_TO_START_SECONDS);
+      this.hud.updateBoardHoldProgress(holdProgress);
+
+      if (this.boardHoldTimer >= BOARD_HOLD_TO_START_SECONDS) {
+        this.boardHoldTimer = 0;
+        this.hud.updateBoardHoldProgress(0);
+        if (this.state === GameState.START) {
+          this.startRun();
+        } else {
+          this.restart();
+        }
+      }
+    } else {
+      if (this.boardHoldTimer > 0) {
+        this.boardHoldTimer = 0;
+        this.hud.updateBoardHoldProgress(0);
+      }
+    }
+
+    // 3-2-1 Countdown Progression
+    if (this.state === GameState.COUNTDOWN) {
+      this.countdownTimer -= dt;
+      this.hud.updateCountdown(Math.max(0, this.countdownTimer), this.playerName, this.difficulty);
+      if (this.countdownTimer <= 0) {
+        this.countdownTimer = 0;
+        this.hud.hideCountdown();
+        this.state = GameState.RUNNING;
+        this.lastTime = performance.now();
+        this.accumulator = 0;
+        this.inputManager.sendGameState(this.state, this.score, this.horseController.distance, this.multiplier);
+      }
+    }
+
     // Fixed-timestep physics simulation accumulator for deterministic behavior
     if (this.state === GameState.RUNNING) {
       this.accumulator += dt;
       while (this.accumulator >= this.fixedDt) {
         this.stepSimulation(this.fixedDt, steer);
         this.accumulator -= this.fixedDt;
+      }
+
+      // Live Telemetry Sync to Smartphone Remote every 0.5s
+      if (now - this.lastTelemetrySyncTime >= 500) {
+        this.lastTelemetrySyncTime = now;
+        this.inputManager.sendGameState(
+          this.state,
+          this.score,
+          this.horseController.distance,
+          this.multiplier
+        );
       }
     } else {
       this.accumulator = 0;
@@ -388,6 +547,35 @@ export class Engine {
     this.horseController.setCrashed(true);
     const effectiveScore = Math.max(this.score, this.horseController.distance);
     const isNewRecord = effectiveScore >= this.highScore && effectiveScore > 0;
+
+    // Save and submit score to local and remote leaderboard
+    const newEntry: LeaderboardEntry = {
+      name: this.playerName,
+      score: Math.floor(effectiveScore),
+      distance: Math.floor(this.horseController.distance),
+      difficulty: this.difficulty
+    };
+    this.leaderboard.push(newEntry);
+    this.leaderboard.sort((a, b) => b.score - a.score);
+    this.leaderboard = this.leaderboard.slice(0, 10);
+    try {
+      localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(this.leaderboard));
+    } catch {
+      // Ignore quota errors
+    }
+    this.hud.updateLeaderboard(this.leaderboard);
+
+    // Sync score and game over state over WebSocket
+    this.inputManager.sendScore({
+      playerName: this.playerName,
+      score: Math.floor(effectiveScore),
+      distance: Math.floor(this.horseController.distance),
+      apples: this.applesCollected,
+      horseshoes: this.horseshoesCollected,
+      difficulty: this.difficulty
+    });
+    this.inputManager.sendGameState(this.state, this.score, this.horseController.distance, this.multiplier);
+
     this.hud.showGameOver(
       this.horseController.distance,
       this.highScore,
@@ -410,10 +598,16 @@ export class Engine {
     this.multiplierTimer = 0;
     this.applesCollected = 0;
     this.horseshoesCollected = 0;
+    this.boardHoldTimer = 0;
+    this.hud.updateBoardHoldProgress(0);
     this.hud.update(0, this.horseController.speed, 0, 1.0, 0, 0, 0);
-    this.state = GameState.RUNNING;
+
+    this.state = GameState.COUNTDOWN;
+    this.countdownTimer = COUNTDOWN_SECONDS;
+    this.hud.showCountdown(this.countdownTimer, this.playerName, this.difficulty);
     this.lastTime = performance.now();
     this.accumulator = 0;
+    this.inputManager.sendGameState(this.state, this.score, this.horseController.distance, this.multiplier);
   }
 
   private onResize(): void {
