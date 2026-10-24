@@ -1,0 +1,27 @@
+{
+  "code-quality-gate": {
+    "enabled": true,
+    "PostToolUse": [
+      {
+        "matcher": "replace_file_content|write_to_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.agents/scripts/lint-and-validate.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  },
+  "stop-verification-gate": {
+    "enabled": true,
+    "Stop": [
+      {
+        "type": "command",
+        "command": "./.agents/scripts/final-verification.sh",
+        "timeout": 45
+      }
+    ]
+  }
+}
