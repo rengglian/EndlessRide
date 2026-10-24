@@ -50,6 +50,14 @@ filtered_steer = 0.0
 last_atoms3_time = 0.0
 last_restart_state = 0
 
+# AtomS3 Telemetry State
+last_atoms3_ip = None
+last_atoms3_seq = 0
+atoms3_pkt_count = 0
+atoms3_window_packets = 0
+atoms3_hz_window_start = time.monotonic()
+atoms3_hz = 0
+
 # AtomS3 UDP Protocol Constants
 PACKET_MAGIC = 0x4552 # 'ER' in hex
 PACKET_FORMAT = "<HBBf" # uint16 magic (2B), uint8 seq (1B), uint8 restart (1B), float steer (4B) = 8 bytes
@@ -161,6 +169,7 @@ def save_state():
         print(f"[WARN] Failed to save state to {STATE_FILE}: {e}")
 
 def get_room_state_dict():
+    sensor_active = (time.monotonic() - last_atoms3_time < 1.5) or simulated_mode or (bus is not None)
     return {
         "type": "room_state",
         "playerName": state.get("playerName", "Rider 1"),
@@ -170,7 +179,9 @@ def get_room_state_dict():
         "calOffset": float(state.get("calOffset", 0.0)),
         "gameState": state.get("gameState", "START"),
         "liveStats": state.get("liveStats", {"score": 0, "distance": 0, "multiplier": 1.0}),
-        "leaderboard": state.get("leaderboard", [])
+        "leaderboard": state.get("leaderboard", []),
+        "atoms3Ip": last_atoms3_ip,
+        "sensorActive": bool(sensor_active)
     }
 
 def get_room_state_json():
@@ -234,20 +245,40 @@ class AtomS3UDPProtocol(asyncio.DatagramProtocol):
 
     def datagram_received(self, data, addr):
         global last_atoms3_time, last_restart_state, last_raw_steer
+        global last_atoms3_ip, last_atoms3_seq, atoms3_pkt_count, atoms3_window_packets, atoms3_hz_window_start, atoms3_hz
         if len(data) == PACKET_SIZE:
             magic, seq, restart, steer = struct.unpack(PACKET_FORMAT, data)
             if magic == PACKET_MAGIC:
-                last_atoms3_time = time.monotonic()
+                now = time.monotonic()
+                last_atoms3_time = now
                 last_raw_steer = steer
+                last_atoms3_ip = addr[0]
+                last_atoms3_seq = seq
+                atoms3_pkt_count += 1
+                atoms3_window_packets += 1
+
+                dt = now - atoms3_hz_window_start
+                if dt >= 1.0:
+                    atoms3_hz = round(atoms3_window_packets / dt)
+                    atoms3_window_packets = 0
+                    atoms3_hz_window_start = now
+                elif atoms3_hz == 0 and dt > 0.1:
+                    atoms3_hz = round(atoms3_window_packets / dt)
+
                 calibrated = apply_calibration(steer)
 
                 if connected_clients:
                     msg = json.dumps({
                         "type": "sensor",
+                        "source": "atoms3",
                         "steer": round(calibrated, 3),
                         "rawSteer": round(last_raw_steer, 3),
                         "calOffset": round(state.get("calOffset", 0.0), 3),
-                        "seq": seq
+                        "rollDeg": round(last_raw_steer * 28.0, 1),
+                        "seq": int(seq),
+                        "button": int(restart),
+                        "hz": int(atoms3_hz),
+                        "deviceIp": last_atoms3_ip
                     })
                     websockets.broadcast(connected_clients, msg)
 
@@ -262,14 +293,17 @@ class AtomS3UDPProtocol(asyncio.DatagramProtocol):
                 last_restart_state = restart
 
 async def sensor_loop():
-    global filtered_steer, last_raw_steer
+    global filtered_steer, last_raw_steer, atoms3_hz
     sim_t = 0.0
 
     while True:
+        now = time.monotonic()
         # If AtomS3 wireless controller is actively streaming, yield to it
-        if time.monotonic() - last_atoms3_time < 1.0:
+        if now - last_atoms3_time < 1.0:
             await asyncio.sleep(0.02)
             continue
+        elif atoms3_hz > 0 and now - last_atoms3_time >= 1.0:
+            atoms3_hz = 0
 
         if simulated_mode:
             sim_t += 0.05
@@ -289,9 +323,13 @@ async def sensor_loop():
         if connected_clients:
             msg = json.dumps({
                 "type": "sensor",
+                "source": "simulate" if simulated_mode else "mpu6050",
                 "steer": round(calibrated, 3),
                 "rawSteer": round(last_raw_steer, 3),
                 "calOffset": round(state.get("calOffset", 0.0), 3),
+                "rollDeg": round(last_raw_steer * 28.0, 1),
+                "button": 0,
+                "hz": 50,
                 "accel": {
                     "x": round(ax, 3),
                     "y": round(ay, 3),

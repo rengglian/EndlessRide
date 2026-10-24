@@ -367,6 +367,155 @@
       font-weight: 600;
     }
 
+    /* Controller Telemetry Sub-panel */
+    .controller-badge {
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 4px 9px;
+      border-radius: 9999px;
+      border: 1px solid var(--card-border);
+      background: rgba(0, 0, 0, 0.3);
+      color: var(--text-muted);
+      transition: all 0.2s ease;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+      max-width: 60%;
+    }
+
+    .controller-badge.active-atoms3 {
+      background: rgba(16, 185, 129, 0.15);
+      border-color: rgba(16, 185, 129, 0.4);
+      color: #34d399;
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+    }
+
+    .controller-badge.active-mpu {
+      background: rgba(59, 130, 246, 0.15);
+      border-color: rgba(59, 130, 246, 0.4);
+      color: #60a5fa;
+    }
+
+    .controller-badge.active-sim {
+      background: rgba(168, 85, 247, 0.15);
+      border-color: rgba(168, 85, 247, 0.4);
+      color: #c084fc;
+    }
+
+    .controller-badge.waiting {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+    }
+
+    /* Auto-discovered AtomS3 Web setup link */
+    .atoms3-web-link-row {
+      margin-bottom: 12px;
+      display: none;
+    }
+
+    .atoms3-web-btn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.18), rgba(16, 185, 129, 0.12));
+      border: 1px solid rgba(96, 165, 250, 0.35);
+      border-radius: 12px;
+      padding: 10px 14px;
+      color: #93c5fd;
+      text-decoration: none;
+      font-size: 0.82rem;
+      font-weight: 700;
+      transition: all 0.15s ease;
+      touch-action: manipulation;
+    }
+
+    .atoms3-web-btn:active {
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.3), rgba(16, 185, 129, 0.22));
+      border-color: #60a5fa;
+      color: #fff;
+      transform: scale(0.99);
+    }
+
+    .atoms3-btn-content {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .atoms3-btn-arrow {
+      font-size: 0.95rem;
+      color: #60a5fa;
+    }
+
+    /* Control Output Grid */
+    .control-telemetry-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .ctrl-item {
+      background: rgba(0, 0, 0, 0.28);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      padding: 8px 4px;
+      text-align: center;
+    }
+
+    .ctrl-label {
+      font-size: 0.62rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 2px;
+    }
+
+    .ctrl-val {
+      font-size: 0.95rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .ctrl-val.steer-center { color: #60a5fa; }
+    .ctrl-val.steer-left { color: #38bdf8; }
+    .ctrl-val.steer-right { color: #818cf8; }
+    .ctrl-val.steer-hard { color: #f87171; }
+
+    .btna-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.68rem;
+      font-weight: 800;
+      padding: 3px 6px;
+      border-radius: 9999px;
+      transition: all 0.15s ease;
+      width: 90%;
+      margin: 0 auto;
+    }
+
+    .btna-pill.idle {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-muted);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .btna-pill.pressed {
+      background: #10b981;
+      color: #042f2e;
+      border: 1px solid #34d399;
+      box-shadow: 0 0 12px rgba(16, 185, 129, 0.85);
+      animation: pulseBtnA 0.3s ease infinite alternate;
+    }
+
+    @keyframes pulseBtnA {
+      from { transform: scale(1.0); }
+      to { transform: scale(1.05); }
+    }
+
     /* Bubble Level Gauge */
     .level-container {
       background: rgba(0, 0, 0, 0.35);
@@ -686,8 +835,19 @@
   <!-- Balance Board Live Level & Calibration -->
   <div class="card">
     <div class="card-title">
-      <span>⚖️ Balance Board Level & Zero</span>
-      <span id="levelSteerVal" style="font-size: 0.75rem; color: #60a5fa;">0.00</span>
+      <span>⚖️ Balance Board & AtomS3</span>
+      <span id="controllerStatusBadge" class="controller-badge waiting">⚪ Waiting for Controller...</span>
+    </div>
+
+    <!-- Auto-Discovered AtomS3 Web Setup Quick-Link -->
+    <div id="atoms3LinkRow" class="atoms3-web-link-row">
+      <a id="atoms3WebLink" href="#" target="_blank" rel="noopener noreferrer" class="atoms3-web-btn">
+        <div class="atoms3-btn-content">
+          <span>🌐</span>
+          <span id="atoms3WebText">AtomS3 Web Setup</span>
+        </div>
+        <span class="atoms3-btn-arrow">↗</span>
+      </a>
     </div>
 
     <!-- Bubble Level Gauge -->
@@ -701,9 +861,26 @@
       <div id="levelBubble" class="level-bubble"></div>
     </div>
 
-    <div class="cal-readouts">
-      <span>Raw Tilt: <strong id="rawSteerDisplay">0.00</strong></span>
-      <span>Tare Offset: <strong id="calOffsetDisplay">0.00</strong></span>
+    <!-- Detailed Control Output Grid -->
+    <div class="control-telemetry-grid">
+      <div class="ctrl-item">
+        <div class="ctrl-label">Steer Out</div>
+        <div id="levelSteerVal" class="ctrl-val steer-center">0.00</div>
+      </div>
+      <div class="ctrl-item">
+        <div class="ctrl-label">Tilt Angle</div>
+        <div id="tiltDegDisplay" class="ctrl-val" style="color: #38bdf8;">±0.0°</div>
+      </div>
+      <div class="ctrl-item">
+        <div class="ctrl-label">Raw / Tare</div>
+        <div class="ctrl-val" style="font-size: 0.78rem; color: var(--text-muted); white-space: nowrap;">
+          <span id="rawSteerDisplay" style="color: #cbd5e1;">+0.00</span> / <span id="calOffsetDisplay">0.00</span>
+        </div>
+      </div>
+      <div class="ctrl-item">
+        <div class="ctrl-label">BtnA Press</div>
+        <div id="btnAIndicator" class="btna-pill idle">⚪ Idle</div>
+      </div>
     </div>
 
     <div class="cal-buttons">
@@ -806,6 +983,13 @@
     const sensitivitySlider = document.getElementById('sensitivitySlider');
     const sensitivityDisplay = document.getElementById('sensitivityDisplay');
 
+    const controllerStatusBadge = document.getElementById('controllerStatusBadge');
+    const atoms3LinkRow = document.getElementById('atoms3LinkRow');
+    const atoms3WebLink = document.getElementById('atoms3WebLink');
+    const atoms3WebText = document.getElementById('atoms3WebText');
+    const tiltDegDisplay = document.getElementById('tiltDegDisplay');
+    const btnAIndicator = document.getElementById('btnAIndicator');
+
     const leaderboardBody = document.getElementById('leaderboardBody');
 
     const hostModal = document.getElementById('hostModal');
@@ -884,6 +1068,31 @@
       }
     }
 
+    let lastPacketTimestamp = 0;
+    let lastSensorSource = '';
+    let knownAtoms3Ip = null;
+    let btnATimer = null;
+
+    function triggerBtnAPress() {
+      if (!btnAIndicator) return;
+      btnAIndicator.className = 'btna-pill pressed';
+      btnAIndicator.textContent = '🔘 BtnA: PRESSED';
+      clearTimeout(btnATimer);
+      btnATimer = setTimeout(() => {
+        btnAIndicator.className = 'btna-pill idle';
+        btnAIndicator.textContent = '⚪ BtnA: Idle';
+      }, 400);
+    }
+
+    function updateAtoms3Ip(ip) {
+      if (ip && ip !== knownAtoms3Ip) {
+        knownAtoms3Ip = ip;
+        atoms3WebLink.href = `http://${ip}/`;
+        atoms3WebText.textContent = `AtomS3 Web Setup (http://${ip}/)`;
+        atoms3LinkRow.style.display = 'block';
+      }
+    }
+
     // Handle Incoming WebSocket Messages
     function handleIncomingMessage(data) {
       if (!data) return;
@@ -893,6 +1102,8 @@
         renderRoomState(data);
       } else if (data.type === 'sensor') {
         renderSensorData(data);
+      } else if (data.type === 'button') {
+        triggerBtnAPress();
       }
     }
 
@@ -954,7 +1165,12 @@
         calOffsetDisplay.textContent = data.calOffset.toFixed(2);
       }
 
-      // 6. Leaderboard
+      // 6. AtomS3 IP Quick Link
+      if (data.atoms3Ip) {
+        updateAtoms3Ip(data.atoms3Ip);
+      }
+
+      // 7. Leaderboard
       if (Array.isArray(data.leaderboard)) {
         renderLeaderboard(data.leaderboard);
       }
@@ -974,19 +1190,71 @@
     }
 
     function renderSensorData(sensor) {
+      lastPacketTimestamp = Date.now();
       const steer = typeof sensor.steer === 'number' ? sensor.steer : 0;
       const rawSteer = typeof sensor.rawSteer === 'number' ? sensor.rawSteer : steer;
       const calOffset = typeof sensor.calOffset === 'number' ? sensor.calOffset : 0;
+      const source = sensor.source || 'atoms3';
+      lastSensorSource = source;
 
-      // Update text values
+      // 1. Tilt angle in degrees
+      const rollDeg = typeof sensor.rollDeg === 'number' ? sensor.rollDeg : (rawSteer * 28.0);
+      const rollSign = rollDeg > 0.05 ? '+' : (rollDeg < -0.05 ? '-' : '±');
+      tiltDegDisplay.textContent = `${rollSign}${Math.abs(rollDeg).toFixed(1)}°`;
+
+      // 2. Steer value and dynamic coloring
       levelSteerVal.textContent = steer >= 0 ? `+${steer.toFixed(2)}` : steer.toFixed(2);
-      rawSteerDisplay.textContent = rawSteer.toFixed(2);
-      calOffsetDisplay.textContent = calOffset.toFixed(2);
+      levelSteerVal.className = 'ctrl-val';
+      if (Math.abs(steer) > 0.65) {
+        levelSteerVal.classList.add('steer-hard');
+      } else if (steer > 0.1) {
+        levelSteerVal.classList.add('steer-right');
+      } else if (steer < -0.1) {
+        levelSteerVal.classList.add('steer-left');
+      } else {
+        levelSteerVal.classList.add('steer-center');
+      }
 
-      // Move Bubble Level (clamp steer between -1 and +1, map to 10% .. 90%)
+      rawSteerDisplay.textContent = rawSteer >= 0 ? `+${rawSteer.toFixed(2)}` : rawSteer.toFixed(2);
+      calOffsetDisplay.textContent = calOffset >= 0 ? `+${calOffset.toFixed(2)}` : calOffset.toFixed(2);
+
+      // 3. Controller Status & Packet Rate Badge
+      const hz = sensor.hz || 50;
+      if (source === 'atoms3') {
+        const seqStr = typeof sensor.seq === 'number' ? ` · Seq #${sensor.seq}` : '';
+        controllerStatusBadge.textContent = `🟢 AtomS3 UDP (${hz} Hz${seqStr})`;
+        controllerStatusBadge.className = 'controller-badge active-atoms3';
+        if (sensor.deviceIp) {
+          updateAtoms3Ip(sensor.deviceIp);
+        }
+      } else if (source === 'mpu6050') {
+        controllerStatusBadge.textContent = `🟢 MPU-6050 I2C (${hz} Hz)`;
+        controllerStatusBadge.className = 'controller-badge active-mpu';
+      } else if (source === 'simulate') {
+        controllerStatusBadge.textContent = `🟣 Simulation (${hz} Hz)`;
+        controllerStatusBadge.className = 'controller-badge active-sim';
+      }
+
+      // 4. Button press indicator
+      if (sensor.button === 1) {
+        triggerBtnAPress();
+      }
+
+      // 5. Move Bubble Level (clamp steer between -1 and +1, map to 10% .. 90%)
       const pct = 50 + (steer * 40);
       levelBubble.style.left = `${Math.max(10, Math.min(90, pct))}%`;
     }
+
+    // 1-second Staleness Watchdog
+    setInterval(() => {
+      if (lastPacketTimestamp > 0 && Date.now() - lastPacketTimestamp > 1000) {
+        controllerStatusBadge.textContent = lastSensorSource === 'atoms3'
+          ? '⚪ Waiting for AtomS3 UDP...'
+          : '⚪ Waiting for Controller...';
+        controllerStatusBadge.className = 'controller-badge waiting';
+        levelBubble.style.left = '50%';
+      }
+    }, 350);
 
     function renderLeaderboard(board) {
       if (board.length === 0) {
