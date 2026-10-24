@@ -10,5 +10,7 @@ export interface ObstacleEntity {
   lateralOffset: number;
   active: boolean;
   chunkIndex: number;
+  halfWidth: number;
+  halfLength: number;
   collisionRadius: number;
 }

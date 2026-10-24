@@ -1,5 +1,11 @@
 import * as THREE from 'three';
 import { SplineTrack } from '../../track/SplineTrack';
+import {
+  BASE_SPEED,
+  MAX_SPEED,
+  STEER_MAX_SPEED,
+  MAX_LATERAL_OFFSET
+} from '../../config';
 import { HorseMesh } from './HorseMesh';
 import { GirlRiderEntity } from '../rider/GirlRiderEntity';
 import { AssetLoader, type LoadedModel } from '../../loaders/AssetLoader';
@@ -37,22 +43,32 @@ export class HorseRunnerController {
   private horseBones: Map<string, THREE.Bone> = new Map();
   private horseBaseRotations: Map<string, THREE.Euler> = new Map();
 
+  // Cached direct bone references for zero per-frame lookups
+  private saddleBoneRef: THREE.Object3D | null = null;
+  private backBoneRef: THREE.Bone | null = null;
+  private neck1BoneRef: THREE.Bone | null = null;
+  private neck2BoneRef: THREE.Bone | null = null;
+  private headBoneRef: THREE.Bone | null = null;
+  private neck1BaseRot: THREE.Euler | null = null;
+  private neck2BaseRot: THREE.Euler | null = null;
+
   // Dynamic physical reins
   private reinsMesh: THREE.LineSegments;
   private reinGeom: THREE.BufferGeometry;
   private reinPositions: Float32Array;
 
   // Kinematic parameters
+  public prevDistance = 0;
   public distance = 0;
-  public speed = 18.0; // Fast initial gallop speed (65 km/h)
+  public speed = BASE_SPEED; // Fast initial gallop speed (65 km/h)
   public lateralOffset = 0; // u across track width [-3.5, 3.5]
   public lateralVelocity = 0;
 
   private gallopPhase = 0;
   private isCrashed = false;
 
-  public readonly maxLateralOffset = 3.5;
-  public readonly steerMaxSpeed = 12.0; // Responsive high-speed lateral agility
+  public readonly maxLateralOffset = MAX_LATERAL_OFFSET;
+  public readonly steerMaxSpeed = STEER_MAX_SPEED; // Responsive high-speed lateral agility
   private readonly riderBaseY = 1.22;
   private readonly riderBaseZ = 0.0;
 
@@ -127,6 +143,20 @@ export class HorseRunnerController {
           }
         });
 
+        // Cache direct bone references once to eliminate Map lookups in the render loop
+        this.saddleBoneRef =
+          this.customModel.saddleBone ||
+          this.horseBones.get('Torso2') ||
+          this.horseBones.get('Torso') ||
+          null;
+        this.backBoneRef = this.horseBones.get('Back') || this.horseBones.get('Torso') || null;
+        this.neck1BoneRef = this.horseBones.get('Neck1') || null;
+        this.neck2BoneRef = this.horseBones.get('Neck2') || null;
+        this.headBoneRef = this.horseBones.get('Head') || null;
+
+        if (this.neck1BoneRef) this.neck1BaseRot = this.neck1BoneRef.rotation.clone();
+        if (this.neck2BoneRef) this.neck2BaseRot = this.neck2BoneRef.rotation.clone();
+
         // Position girl rider firmly on top of horse saddle (centered at Z=0)
         this.girlRider.rootGroup.position.set(0, this.riderBaseY, this.riderBaseZ);
         this.rootGroup.add(this.girlRider.rootGroup);
@@ -143,20 +173,32 @@ export class HorseRunnerController {
     const dt = isNaN(deltaTime) || deltaTime <= 0 ? 0.0166 : Math.min(deltaTime, 0.05);
     const steer = isNaN(steerInput) ? 0 : THREE.MathUtils.clamp(steerInput, -1.0, 1.0);
 
-    // 1. High-speed forward progression & dynamic acceleration
-    this.distance += this.speed * dt;
-    this.speed = Math.min(30.0, 18.0 + 0.1 * Math.sqrt(Math.max(0, this.distance)));
+    // 1. Arc-length compensated forward progression: uniform ground speed along curves
+    this.prevDistance = this.distance;
+    const dPds = this.spline.getArcLengthFactor(this.distance);
+    const ds = (this.speed * dt) / dPds;
+    this.distance += ds;
+
+    this.speed = Math.min(MAX_SPEED, BASE_SPEED + 0.1 * Math.sqrt(Math.max(0, this.distance)));
 
     // 2. Lateral Left/Right steering with snappy responsive damping
     const targetLateralVel = steer * this.steerMaxSpeed;
     this.lateralVelocity += (targetLateralVel - this.lateralVelocity) * (1.0 - Math.exp(-18.0 * dt));
 
     this.lateralOffset += this.lateralVelocity * dt;
-    this.lateralOffset = THREE.MathUtils.clamp(
-      this.lateralOffset,
-      -this.maxLateralOffset,
-      this.maxLateralOffset
-    );
+
+    // Boundary clamp & velocity zeroing so horse doesn't lean into boundary wall
+    if (this.lateralOffset >= this.maxLateralOffset) {
+      this.lateralOffset = this.maxLateralOffset;
+      if (this.lateralVelocity > 0) {
+        this.lateralVelocity = 0;
+      }
+    } else if (this.lateralOffset <= -this.maxLateralOffset) {
+      this.lateralOffset = -this.maxLateralOffset;
+      if (this.lateralVelocity < 0) {
+        this.lateralVelocity = 0;
+      }
+    }
 
     // 3. Spline position & orientation on curved track
     this.updateTransform();
@@ -183,12 +225,9 @@ export class HorseRunnerController {
       // Update world matrices of horse bones
       this.customModel.scene.updateMatrixWorld(true);
 
-      // Sample horse's actual spine/back motion
-      const saddleBone =
-        this.customModel.saddleBone ||
-        this.horseBones.get('Torso2') ||
-        this.horseBones.get('Torso');
-      const backBone = this.horseBones.get('Back') || this.horseBones.get('Torso');
+      // Sample horse's actual spine/back motion using cached bone references
+      const saddleBone = this.saddleBoneRef;
+      const backBone = this.backBoneRef;
 
       if (saddleBone) {
         saddleBone.getWorldPosition(_saddleWorld);
@@ -208,13 +247,13 @@ export class HorseRunnerController {
         saddlePitchDelta = currentPitch - -0.12;
       }
 
-      // Neck & Head cadence
-      const neck1 = this.horseBones.get('Neck1');
-      const neck2 = this.horseBones.get('Neck2');
-      const baseNeck1 = this.horseBaseRotations.get('Neck1');
-      const baseNeck2 = this.horseBaseRotations.get('Neck2');
-      if (neck1 && baseNeck1) neck1.rotation.y = baseNeck1.y - Math.cos(this.gallopPhase) * 0.09;
-      if (neck2 && baseNeck2) neck2.rotation.y = baseNeck2.y - Math.cos(this.gallopPhase) * 0.07;
+      // Neck & Head cadence using cached bone references
+      if (this.neck1BoneRef && this.neck1BaseRot) {
+        this.neck1BoneRef.rotation.y = this.neck1BaseRot.y - Math.cos(this.gallopPhase) * 0.09;
+      }
+      if (this.neck2BoneRef && this.neck2BaseRot) {
+        this.neck2BoneRef.rotation.y = this.neck2BaseRot.y - Math.cos(this.gallopPhase) * 0.07;
+      }
 
       // Unified single-source vertical and pitch mount suspension on custom glTF horse
       this.girlRider.rootGroup.position.set(0, saddleElevation, saddleZ);
@@ -224,7 +263,7 @@ export class HorseRunnerController {
       this.gallopPhase += dt * strideFreq * Math.PI * 2;
       saddleElevation = 1.45 + Math.sin(this.gallopPhase * 2.0) * 0.08 + 0.15;
       saddlePitchDelta = Math.cos(this.gallopPhase) * 0.08;
-      // In procedural mode, girlRider.rootGroup is a child of horseMesh.saddleGroup (which already bobs/pitches with torsoGroup)
+      // In procedural mode, girlRider.rootGroup is a child of horseMesh.saddleGroup
       this.girlRider.rootGroup.position.set(0, 0, 0);
       this.girlRider.rootGroup.rotation.x = -saddlePitchDelta * 0.65;
     }
@@ -250,10 +289,9 @@ export class HorseRunnerController {
     }
 
     // 1. Bit positions on horse head
-    const headBone = this.horseBones.get('Head');
-    if (this.customModel && headBone) {
-      headBone.localToWorld(_bitLWorld.set(-0.15, 0.7, 0.0));
-      headBone.localToWorld(_bitRWorld.set(0.15, 0.7, 0.0));
+    if (this.customModel && this.headBoneRef) {
+      this.headBoneRef.localToWorld(_bitLWorld.set(-0.15, 0.7, 0.0));
+      this.headBoneRef.localToWorld(_bitRWorld.set(0.15, 0.7, 0.0));
     } else {
       this.horseMesh.getBitPositions(_bitLWorld, _bitRWorld);
     }
@@ -336,6 +374,7 @@ export class HorseRunnerController {
   }
 
   public reset(): void {
+    this.prevDistance = 0;
     this.distance = 0;
     this.speed = 18.0;
     this.lateralOffset = 0;
@@ -358,6 +397,14 @@ export class HorseRunnerController {
   }
 
   public dispose(): void {
+    if (this.customModel) {
+      this.customModel.scene.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const mesh = child as THREE.Mesh;
+          if (mesh.geometry) mesh.geometry.dispose();
+        }
+      });
+    }
     this.horseMesh.dispose();
     this.girlRider.dispose();
     this.reinGeom.dispose();

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { AssetLoader } from '../../loaders/AssetLoader';
 
 export class GirlRiderEntity {
   public rootGroup: THREE.Group;
@@ -9,6 +9,24 @@ export class GirlRiderEntity {
   private customRiderGroup: THREE.Group | null = null;
   private bones: Map<string, THREE.Bone> = new Map();
   private baseRotations: Map<string, THREE.Euler> = new Map();
+
+  // Cached direct bone references for zero per-frame lookups & regex allocations
+  private hipsBone?: THREE.Bone;
+  private abdomenBone?: THREE.Bone;
+  private torsoBone?: THREE.Bone;
+  private chestBone?: THREE.Bone;
+  private neckBone?: THREE.Bone;
+  private headBone?: THREE.Bone;
+  private upperArmLBone?: THREE.Bone;
+  private lowerArmLBone?: THREE.Bone;
+  private upperArmRBone?: THREE.Bone;
+  private lowerArmRBone?: THREE.Bone;
+  private wristLBone?: THREE.Bone;
+  private wristRBone?: THREE.Bone;
+  private upperLegLBone?: THREE.Bone;
+  private lowerLegLBone?: THREE.Bone;
+  private upperLegRBone?: THREE.Bone;
+  private lowerLegRBone?: THREE.Bone;
 
   // Procedural fallback meshes
   private proceduralHeadGroup!: THREE.Group;
@@ -87,11 +105,9 @@ export class GirlRiderEntity {
   }
 
   public getHandPositions(outLeft: THREE.Vector3, outRight: THREE.Vector3): void {
-    const wristL = this.getBone('Wrist.L');
-    const wristR = this.getBone('Wrist.R');
-    if (this.customRiderGroup && wristL && wristR) {
-      wristL.getWorldPosition(outLeft);
-      wristR.getWorldPosition(outRight);
+    if (this.customRiderGroup && this.wristLBone && this.wristRBone) {
+      this.wristLBone.getWorldPosition(outLeft);
+      this.wristRBone.getWorldPosition(outRight);
     } else if (this.leftHandMesh && this.rightHandMesh) {
       this.leftHandMesh.getWorldPosition(outLeft);
       this.rightHandMesh.getWorldPosition(outRight);
@@ -104,7 +120,6 @@ export class GirlRiderEntity {
   private async loadCustomRider(): Promise<void> {
     const params = new URLSearchParams(window.location.search);
     const customUrl = params.get('riderModel');
-    const loader = new GLTFLoader();
     const candidateUrls = customUrl
       ? [customUrl]
       : [
@@ -115,9 +130,7 @@ export class GirlRiderEntity {
 
     for (const url of candidateUrls) {
       try {
-        const gltf = await new Promise<any>((resolve, reject) => {
-          loader.load(url, resolve, undefined, reject);
-        });
+        const gltf = await AssetLoader.loadGLTF(url);
 
         if (gltf && gltf.scene) {
           const group = gltf.scene as THREE.Group;
@@ -161,7 +174,6 @@ export class GirlRiderEntity {
             this.baseRotations.set('Body', bodyBone.rotation.clone());
           }
           if (torsoBone) {
-            // Neutralize 27° yaw and 4° roll twist from bind pose, keep slight forward inclination
             torsoBone.rotation.set(0.15, 0, 0);
             this.baseRotations.set('Torso', torsoBone.rotation.clone());
           }
@@ -203,6 +215,24 @@ export class GirlRiderEntity {
               this.baseRotations.set(fName, b.rotation.clone());
             }
           }
+
+          // Cache direct bone fields once after load for zero runtime regex or Map lookup overhead
+          this.hipsBone = this.getBone('Hips');
+          this.abdomenBone = this.getBone('Abdomen');
+          this.torsoBone = this.getBone('Torso');
+          this.chestBone = this.getBone('Chest');
+          this.neckBone = this.getBone('Neck');
+          this.headBone = this.getBone('Head');
+          this.upperArmLBone = this.getBone('UpperArm.L');
+          this.lowerArmLBone = this.getBone('LowerArm.L');
+          this.upperArmRBone = this.getBone('UpperArm.R');
+          this.lowerArmRBone = this.getBone('LowerArm.R');
+          this.wristLBone = this.getBone('Wrist.L');
+          this.wristRBone = this.getBone('Wrist.R');
+          this.upperLegLBone = this.getBone('UpperLeg.L');
+          this.lowerLegLBone = this.getBone('LowerLeg.L');
+          this.upperLegRBone = this.getBone('UpperLeg.R');
+          this.lowerLegRBone = this.getBone('LowerLeg.R');
 
           this.customRiderGroup = group;
           this.proceduralGroup.visible = false;
@@ -345,118 +375,92 @@ export class GirlRiderEntity {
 
     const speedRatio = THREE.MathUtils.clamp((forwardSpeed - 18.0) / 12.0, 0.0, 1.0);
 
-    // Eliminate arbitrary double bobbing: vertical positioning is handled by the horse mount suspension
+    // Vertical positioning is handled by the horse mount suspension
     this.spineGroup.position.set(0, 0, 0);
 
     if (this.customRiderGroup) {
-      // In glTF skeleton mode, roll/pitch are distributed progressively across vertebrae joints
       this.spineGroup.rotation.set(0, 0, 0);
 
       // --- A. Pelvis & Hip Shock Absorption (Hips) ---
-      // Counter-phase pelvic flexion cushions horse back pitching ("independent seat")
-      const hips = this.getBone('Hips');
-      if (hips) {
+      if (this.hipsBone) {
         const hipCounterPitch = -saddlePitchDelta * 0.6 + Math.sin(gallopPhase) * 0.04;
-        hips.rotation.x = -0.14 + hipCounterPitch;
+        this.hipsBone.rotation.x = -0.14 + hipCounterPitch;
       }
 
       // --- B. Progressive Spine Chain (Abdomen -> Torso -> Chest) ---
-      // Distribute aerodynamic wind-tuck pitch, lateral centrifugal roll, and turn yaw
-      const abdomen = this.getBone('Abdomen');
-      const torso = this.getBone('Torso');
-      const chest = this.getBone('Chest');
-
       const abdomenTuck = 0.06 + speedRatio * 0.08;
       const torsoTuck = 0.12 + speedRatio * 0.1;
       const chestTuck = 0.06 + speedRatio * 0.08;
 
-      // Positive smoothedSteer = steering right (-X): positive Z roll leans rider right (-X) into the turn
       const targetRoll = this.smoothedSteer * 0.22;
       const targetYaw = -this.smoothedSteer * 0.12;
 
-      if (abdomen) {
-        abdomen.rotation.set(abdomenTuck, targetYaw * 0.2, targetRoll * 0.25);
+      if (this.abdomenBone) {
+        this.abdomenBone.rotation.set(abdomenTuck, targetYaw * 0.2, targetRoll * 0.25);
       }
-      if (torso) {
-        torso.rotation.set(torsoTuck, targetYaw * 0.4, targetRoll * 0.35);
+      if (this.torsoBone) {
+        this.torsoBone.rotation.set(torsoTuck, targetYaw * 0.4, targetRoll * 0.35);
       }
-      if (chest) {
-        chest.rotation.set(chestTuck, targetYaw * 0.4, targetRoll * 0.4);
+      if (this.chestBone) {
+        this.chestBone.rotation.set(chestTuck, targetYaw * 0.4, targetRoll * 0.4);
       }
 
       // --- C. Head & Gaze Stabilization (Neck -> Head) ---
-      // Counter-stabilize pitch to look forward down track, level horizon roll, and look into turn
-      const neck = this.getBone('Neck');
-      const head = this.getBone('Head');
-
       const totalSpinePitch = abdomenTuck + torsoTuck + chestTuck + saddlePitchDelta * 0.35;
       const pitchCompensation = -totalSpinePitch * 0.85;
       const rollCompensation = -targetRoll * 0.7;
-      // Negative Y rotation turns head toward -X (screen-right) when smoothedSteer > 0
       const lookYaw = -this.smoothedSteer * 0.28;
 
-      if (neck) {
-        neck.rotation.set(pitchCompensation * 0.45, lookYaw * 0.3, rollCompensation * 0.35);
+      if (this.neckBone) {
+        this.neckBone.rotation.set(pitchCompensation * 0.45, lookYaw * 0.3, rollCompensation * 0.35);
       }
-      if (head) {
-        head.rotation.set(pitchCompensation * 0.55, lookYaw * 0.7, rollCompensation * 0.65);
+      if (this.headBone) {
+        this.headBone.rotation.set(pitchCompensation * 0.55, lookYaw * 0.7, rollCompensation * 0.65);
       }
 
       // --- D. Dynamic Elastic Rein-Following Arms ---
-      // Soft elastic give-and-take at elbows following head cadence, plus direct steering rein pull
-      const upperArmL = this.getBone('UpperArm.L');
-      const lowerArmL = this.getBone('LowerArm.L');
-      const upperArmR = this.getBone('UpperArm.R');
-      const lowerArmR = this.getBone('LowerArm.R');
-
       const reinCadence = Math.sin(gallopPhase) * 0.04;
       const pullL = this.smoothedSteer < 0 ? -this.smoothedSteer * 0.16 : -this.smoothedSteer * 0.08;
       const pullR = this.smoothedSteer > 0 ? this.smoothedSteer * 0.16 : this.smoothedSteer * 0.08;
 
-      if (upperArmL && lowerArmL) {
-        upperArmL.rotation.set(
+      if (this.upperArmLBone && this.lowerArmLBone) {
+        this.upperArmLBone.rotation.set(
           -0.9 + reinCadence * 0.5 - pullL * 0.4,
           0.2 - pullL * 0.2,
           -0.9 - pullL * 0.3
         );
-        lowerArmL.rotation.set(
+        this.lowerArmLBone.rotation.set(
           -1.1 - reinCadence * 0.8 + pullL * 0.5,
           0.0,
           -1.3 - pullL * 0.2
         );
       }
 
-      if (upperArmR && lowerArmR) {
-        upperArmR.rotation.set(
+      if (this.upperArmRBone && this.lowerArmRBone) {
+        this.upperArmRBone.rotation.set(
           -0.9 + reinCadence * 0.5 - pullR * 0.4,
           -0.2 + pullR * 0.2,
           0.9 + pullR * 0.3
         );
-        lowerArmR.rotation.set(
+        this.lowerArmRBone.rotation.set(
           -1.1 - reinCadence * 0.8 + pullR * 0.5,
           0.0,
           1.3 + pullR * 0.2
         );
       }
 
-      // --- E. Stirrup & Knee Suspension (UpperLeg.L/R, LowerLeg.L/R) ---
-      // Gallop impact spring flexion plus inside stirrup weight transfer during turns
-      const upperLegL = this.getBone('UpperLeg.L');
-      const lowerLegL = this.getBone('LowerLeg.L');
-      const upperLegR = this.getBone('UpperLeg.R');
-      const lowerLegR = this.getBone('LowerLeg.R');
-
+      // --- E. Stirrup & Knee Suspension ---
       const kneeSpring = Math.sin(gallopPhase) * 0.04;
       const insideShift = this.smoothedSteer * 0.05;
 
-      if (upperLegL && lowerLegL) {
-        upperLegL.rotation.set(1.4 + kneeSpring * 0.3 - insideShift, 0.15, -0.35);
-        lowerLegL.rotation.set(1.7 + kneeSpring * 0.6 - insideShift * 0.5, 0.0, 0.0);
+      if (this.upperLegLBone && this.lowerLegLBone) {
+        this.upperLegLBone.rotation.set(1.4 + kneeSpring * 0.3 - insideShift, 0.15, -0.35);
+        this.lowerLegLBone.rotation.set(1.7 + kneeSpring * 0.6 - insideShift * 0.5, 0.0, 0.0);
       }
 
-      if (upperLegR && lowerLegR) {
-        upperLegR.rotation.set(1.4 + kneeSpring * 0.3 + insideShift, -0.15, 0.35);
-        lowerLegR.rotation.set(1.7 + kneeSpring * 0.6 + insideShift * 0.5, 0.0, 0.0);
+      if (this.upperLegRBone && this.lowerLegRBone) {
+        this.upperLegRBone.rotation.set(1.4 + kneeSpring * 0.3 + insideShift, -0.15, 0.35);
+        this.lowerLegRBone.rotation.set(1.7 + kneeSpring * 0.6 + insideShift * 0.5, 0.0, 0.0);
       }
     } else {
       // Procedural Fallback Mesh Kinematics
@@ -511,6 +515,14 @@ export class GirlRiderEntity {
   }
 
   public dispose(): void {
+    this.rootGroup.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        if (mesh.geometry) {
+          mesh.geometry.dispose();
+        }
+      }
+    });
     this.skinMat.dispose();
     this.jacketMat.dispose();
     this.pantsMat.dispose();

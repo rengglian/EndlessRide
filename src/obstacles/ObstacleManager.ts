@@ -53,49 +53,102 @@ export class ObstacleManager {
       obstacle.mesh.quaternion.copy(_trackQuat);
       obstacle.mesh.quaternion.premultiply(_bankQuat);
 
+      // Static obstacle matrix freeze (Sec 4.4)
+      obstacle.mesh.matrixAutoUpdate = false;
+      obstacle.mesh.updateMatrix();
+      obstacle.mesh.updateMatrixWorld(true);
+
       this.activeObstacles.push(obstacle);
     }
   }
 
   /**
-   * Removes all obstacles associated with a recycled chunk.
+   * Removes all obstacles associated with a recycled chunk using in-place swap-remove (Sec 4.3).
    */
   public recycleChunkObstacles(chunkIndex: number): void {
-    const remaining: ObstacleEntity[] = [];
-
-    for (const obs of this.activeObstacles) {
+    for (let i = this.activeObstacles.length - 1; i >= 0; i--) {
+      const obs = this.activeObstacles[i];
       if (obs.chunkIndex === chunkIndex) {
         this.pool.release(obs);
-      } else {
-        remaining.push(obs);
+        const last = this.activeObstacles.pop()!;
+        if (i < this.activeObstacles.length) {
+          this.activeObstacles[i] = last;
+        }
       }
     }
-
-    this.activeObstacles = remaining;
   }
 
   /**
-   * Fast, zero-allocation cylinder/sphere collision check between horse and nearby obstacles.
+   * Swept AABB collision check in (s, u) longitudinal/lateral space (Sec 3.7).
+   * Supports swept interval [prevDist, currDist] as well as backward-compatible 2-arg (currDist, lateral).
    */
+  public checkPlayerCollision(
+    prevPlayerDist: number,
+    currPlayerDist: number,
+    playerLateral: number,
+    playerHalfWidth?: number,
+    playerHalfLength?: number
+  ): boolean;
   public checkPlayerCollision(
     playerDist: number,
     playerLateral: number,
-    playerRadius = 0.65
+    playerRadius?: number
+  ): boolean;
+  public checkPlayerCollision(
+    arg1: number,
+    arg2: number,
+    arg3?: number,
+    arg4 = 0.42,
+    arg5 = 0.85
   ): boolean {
+    let prevDist: number;
+    let currDist: number;
+    let lateral: number;
+    let halfWidth = arg4;
+    let halfLength = arg5;
+
+    if (arg3 === undefined) {
+      // 2-arg call: (currPlayerDist, playerLateral)
+      prevDist = arg1;
+      currDist = arg1;
+      lateral = arg2;
+    } else if (typeof arg3 === 'number') {
+      // Check if 3-arg call is legacy (dist, lateral, radius) or swept (prev, curr, lateral)
+      if (Math.abs(arg2) <= 4.0 && Math.abs(arg1) > 4.0 && arg3 <= 1.5) {
+        // Legacy: (playerDist, playerLateral, playerRadius)
+        prevDist = arg1;
+        currDist = arg1;
+        lateral = arg2;
+        halfWidth = arg3 * 0.65;
+        halfLength = arg3;
+      } else {
+        // Swept: (prevPlayerDist, currPlayerDist, playerLateral)
+        prevDist = arg1;
+        currDist = arg2;
+        lateral = arg3;
+      }
+    } else {
+      prevDist = arg1;
+      currDist = arg1;
+      lateral = arg2;
+    }
+
+    const minPlayerS = Math.min(prevDist, currDist) - halfLength;
+    const maxPlayerS = Math.max(prevDist, currDist) + halfLength;
+
     for (let i = 0; i < this.activeObstacles.length; i++) {
       const obs = this.activeObstacles[i];
+      const obsMinS = obs.distance - obs.halfLength;
+      const obsMaxS = obs.distance + obs.halfLength;
 
-      // Longitudinal distance check (only check obstacles close to player)
-      const dDist = Math.abs(obs.distance - playerDist);
-      if (dDist > 1.8) {
+      // Longitudinal swept interval overlap
+      if (maxPlayerS < obsMinS || minPlayerS > obsMaxS) {
         continue;
       }
 
-      // Lateral distance check
-      const dLat = Math.abs(obs.lateralOffset - playerLateral);
-      const combinedRadius = obs.collisionRadius + playerRadius;
-
-      if (dLat < combinedRadius * 0.82 && dDist < 1.2) {
+      // Lateral extent overlap
+      const dLat = Math.abs(lateral - obs.lateralOffset);
+      if (dLat < (obs.halfWidth + halfWidth)) {
         return true;
       }
     }

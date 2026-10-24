@@ -14,7 +14,8 @@ export interface DebugTelemetryData {
 
 export class DebugHUD {
   private container: HTMLElement;
-  private isVisible = true;
+  private isVisible: boolean;
+  private styleElement: HTMLStyleElement | null = null;
 
   // FPS calculation accumulators
   private frameCount = 0;
@@ -44,8 +45,16 @@ export class DebugHUD {
   };
 
   constructor() {
+    const isDev = Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
+    const hasDebugParam = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug');
+    this.isVisible = isDev || hasDebugParam;
+
     this.container = document.createElement('div');
     this.container.id = 'debug-hud';
+    if (!this.isVisible) {
+      this.container.classList.add('hidden');
+    }
+
     this.applyStyles();
     this.buildDOM();
     document.body.appendChild(this.container);
@@ -54,9 +63,13 @@ export class DebugHUD {
     window.addEventListener('keydown', this.onKeyDownBound);
   }
 
+  public getIsVisible(): boolean {
+    return this.isVisible;
+  }
+
   private applyStyles(): void {
-    const style = document.createElement('style');
-    style.textContent = `
+    this.styleElement = document.createElement('style');
+    this.styleElement.textContent = `
       #debug-hud {
         position: absolute;
         top: 14px;
@@ -150,7 +163,7 @@ export class DebugHUD {
         transition: width 0.05s linear, left 0.05s linear, background 0.1s ease;
       }
     `;
-    document.head.appendChild(style);
+    document.head.appendChild(this.styleElement);
   }
 
   private buildDOM(): void {
@@ -243,35 +256,30 @@ export class DebugHUD {
   public update(data: DebugTelemetryData): void {
     if (!this.isVisible) return;
 
-    // 1. Calculate FPS & Frame Time
     this.frameCount++;
     this.timeAccumulator += data.deltaTime;
 
-    if (this.timeAccumulator >= 0.2) {
-      this.currentFps = this.frameCount / this.timeAccumulator;
-      this.currentFrameTimeMs = (this.timeAccumulator / this.frameCount) * 1000;
-      this.frameCount = 0;
-      this.timeAccumulator = 0;
+    // Throttle DOM writes to ~5 Hz (every 200ms) to eliminate layout thrashing
+    if (this.timeAccumulator < 0.2) {
+      return;
     }
 
-    // 2. Render Telemetry Values
-    const fpsClass =
-      this.currentFps >= 55
-        ? 'dbg-val-green'
-        : this.currentFps >= 30
-        ? 'dbg-val-yellow'
-        : 'dbg-val-red';
+    this.currentFps = this.frameCount / this.timeAccumulator;
+    this.currentFrameTimeMs = (this.timeAccumulator / this.frameCount) * 1000;
+    this.frameCount = 0;
+    this.timeAccumulator = 0;
 
-    this.fpsValEl.innerHTML = `<span class="${fpsClass}">${this.currentFps.toFixed(1)} fps</span> (${this.currentFrameTimeMs.toFixed(1)}ms)`;
+    // 1. Performance
+    this.fpsValEl.textContent = `${this.currentFps.toFixed(1)} fps (${this.currentFrameTimeMs.toFixed(1)}ms)`;
 
     const renderInfo = data.renderer.info.render;
     const memInfo = data.renderer.info.memory;
     const trisK = (renderInfo.triangles / 1000).toFixed(1);
 
-    this.callsValEl.innerText = `${renderInfo.calls} calls | ${trisK}k tris`;
-    this.memValEl.innerText = `${memInfo.geometries} geom | ${memInfo.textures} tex`;
+    this.callsValEl.textContent = `${renderInfo.calls} calls | ${trisK}k tris`;
+    this.memValEl.textContent = `${memInfo.geometries} geom | ${memInfo.textures} tex`;
 
-    // 3. Input & Lane Status
+    // 2. Input & Lane Status
     const steer = data.steerInput;
     let laneName = 'CENTER';
     if (data.lateralOffset > 1.2) laneName = 'RIGHT';
@@ -281,32 +289,29 @@ export class DebugHUD {
     if (steer < -0.1) steerStr = `LEFT (${steer.toFixed(2)})`;
     else if (steer > 0.1) steerStr = `RIGHT (+${steer.toFixed(2)})`;
 
-    this.inputValEl.innerText = `${steerStr} [${laneName}]`;
+    this.inputValEl.textContent = `${steerStr} [${laneName}]`;
 
-    // Input Meter Bar
     if (steer < 0) {
       const widthPct = Math.abs(steer) * 50;
       this.inputBarEl.style.left = `${50 - widthPct}%`;
       this.inputBarEl.style.width = `${widthPct}%`;
-      this.inputBarEl.style.background = '#38bdf8';
     } else {
       const widthPct = steer * 50;
       this.inputBarEl.style.left = '50%';
       this.inputBarEl.style.width = `${widthPct}%`;
-      this.inputBarEl.style.background = '#38bdf8';
     }
 
-    // 4. Horse Kinematics
+    // 3. Horse Kinematics
     const kmh = (data.speed * 3.6).toFixed(1);
-    this.speedValEl.innerText = `${data.speed.toFixed(1)} m/s (${kmh} km/h)`;
-    this.distValEl.innerText = `${Math.floor(data.distance)} m | u: ${data.lateralOffset >= 0 ? '+' : ''}${data.lateralOffset.toFixed(2)}m`;
+    this.speedValEl.textContent = `${data.speed.toFixed(1)} m/s (${kmh} km/h)`;
+    this.distValEl.textContent = `${Math.floor(data.distance)} m | u: ${data.lateralOffset >= 0 ? '+' : ''}${data.lateralOffset.toFixed(2)}m`;
 
     const strideFreq = (4.4 * (data.speed / 18.0)).toFixed(1);
-    this.bankValEl.innerText = `${data.trackBankDeg >= 0 ? '+' : ''}${data.trackBankDeg.toFixed(1)}° | ${strideFreq} Hz`;
+    this.bankValEl.textContent = `${data.trackBankDeg >= 0 ? '+' : ''}${data.trackBankDeg.toFixed(1)}° | ${strideFreq} Hz`;
 
-    // 5. World Streaming
-    this.chunksValEl.innerText = `${data.activeChunkCount} chunks (${data.activeChunkCount * 50}m)`;
-    this.obsValEl.innerText = `${data.activeObstacleCount} active`;
+    // 4. World Streaming
+    this.chunksValEl.textContent = `${data.activeChunkCount} chunks (${data.activeChunkCount * 50}m)`;
+    this.obsValEl.textContent = `${data.activeObstacleCount} active`;
   }
 
   public toggle(): void {
@@ -320,6 +325,10 @@ export class DebugHUD {
 
   public dispose(): void {
     window.removeEventListener('keydown', this.onKeyDownBound);
+    if (this.styleElement && this.styleElement.parentNode) {
+      this.styleElement.parentNode.removeChild(this.styleElement);
+      this.styleElement = null;
+    }
     if (this.container.parentNode) {
       this.container.parentNode.removeChild(this.container);
     }

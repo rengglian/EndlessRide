@@ -35,12 +35,13 @@
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      padding: env(safe-area-inset-top, 20px) env(safe-area-inset-right, 20px) env(safe-area-inset-bottom, 20px) env(safe-area-inset-left, 20px);
+      padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
     }
     .hud-top {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
+      gap: 12px;
     }
     .score-badge {
       background: rgba(15, 23, 42, 0.75);
@@ -68,6 +69,9 @@
       font-family: monospace;
       color: #38bdf8;
     }
+    .high-score-value {
+      color: #facc15;
+    }
     .speed-value {
       color: #34d399;
     }
@@ -91,7 +95,7 @@
       align-items: center;
       gap: 6px;
     }
-    #gameover-modal {
+    .modal-overlay {
       position: absolute;
       inset: 0;
       background: rgba(15, 23, 42, 0.85);
@@ -107,8 +111,9 @@
       transition: opacity 0.3s ease, visibility 0.3s ease;
       gap: 16px;
       color: #fff;
+      z-index: 50;
     }
-    #gameover-modal.visible {
+    .modal-overlay.visible {
       opacity: 1;
       visibility: visible;
     }
@@ -118,7 +123,7 @@
       border-radius: 20px;
       padding: 32px;
       text-align: center;
-      max-width: 360px;
+      max-width: 380px;
       width: 90%;
       box-shadow: 0 20px 40px rgba(0,0,0,0.5);
       display: flex;
@@ -141,6 +146,19 @@
       transform: scale(0.97);
       background: #2563eb;
     }
+    .record-badge {
+      background: #eab308;
+      color: #0f172a;
+      font-weight: 800;
+      font-size: 11px;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      width: fit-content;
+      margin: 0 auto;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -153,8 +171,12 @@
         <span id="hud-distance" class="score-value">0 m</span>
       </div>
       <div class="score-badge">
+        <span class="score-title">High Score</span>
+        <span id="hud-high-score" class="score-value high-score-value">0 m</span>
+      </div>
+      <div class="score-badge">
         <span class="score-title">Speed</span>
-        <span id="hud-speed" class="score-value speed-value">12.0 m/s</span>
+        <span id="hud-speed" class="score-value speed-value">18.0 m/s</span>
       </div>
     </div>
 
@@ -164,8 +186,31 @@
     </div>
   </div>
 
-  <div id="gameover-modal">
+  <!-- Start Screen Modal -->
+  <div id="start-modal" class="modal-overlay visible">
     <div class="gameover-card">
+      <div style="font-size: 13px; font-weight: 800; letter-spacing: 2px; color: #38bdf8; text-transform: uppercase;">ENDLESS RUNNER</div>
+      <h1 style="font-size: 26px; font-weight: 800;">Endless Ride</h1>
+      <p style="color: #94a3b8; font-size: 14px;">Gallop through scenic mountain trails. Dodge obstacles laterally across the banked track.</p>
+      <button id="start-btn" class="restart-btn" style="background: #10b981;">Start Ride</button>
+      <div style="font-size: 12px; color: #64748b;">Controls: A / D, Left / Right, Touch sides, or Tilt Sensor</div>
+    </div>
+  </div>
+
+  <!-- Pause Screen Modal -->
+  <div id="pause-modal" class="modal-overlay">
+    <div class="gameover-card">
+      <div style="font-size: 13px; font-weight: 800; letter-spacing: 2px; color: #facc15; text-transform: uppercase;">GAME PAUSED</div>
+      <h2 style="font-size: 24px; font-weight: 800;">Ride Paused</h2>
+      <p style="color: #94a3b8; font-size: 14px;">Press Esc, P, or tap below to continue.</p>
+      <button id="resume-btn" class="restart-btn">Resume Ride</button>
+    </div>
+  </div>
+
+  <!-- Game Over Modal -->
+  <div id="gameover-modal" class="modal-overlay">
+    <div class="gameover-card">
+      <div id="new-record-badge" class="record-badge">New Record!</div>
       <div style="font-size: 14px; font-weight: 800; letter-spacing: 2px; color: #ef4444; text-transform: uppercase;">GAME OVER</div>
       <h2 style="font-size: 24px; font-weight: 800;">Run Ended</h2>
       <p id="final-stats" style="color: #94a3b8; font-size: 15px;">You covered 0 meters!</p>

@@ -31,9 +31,14 @@ struct ControllerPacket {
 const uint16_t PACKET_MAGIC = 0x4552; // 'ER' in hex
 uint8_t packetSeq = 0;
 
-float filteredSteer = 0.0;
+float rollOffsetDeg = 0.0f;
+float fusedRollDeg = 0.0f;
+float filteredSteer = 0.0f;
 unsigned long lastSampleTime = 0;
-bool pendingRestart = false;
+unsigned long lastWifiCheckTime = 0;
+unsigned long btnPressStartTime = 0;
+bool isCalibrating = false;
+uint8_t restartPacketsRemaining = 0;
 
 // HTML Portal with Pi IP input
 const char PORTAL_HTML[] = R"rawliteral(
@@ -161,6 +166,7 @@ void setup() {
   String savedSSID = prefs.getString("ssid", "");
   String savedPass = prefs.getString("pass", "");
   String savedPiIP = prefs.getString("pi_ip", "");
+  rollOffsetDeg    = prefs.getFloat("roll_offset", 0.0f);
   prefs.end();
 
   // Validate credentials and IP address
@@ -230,7 +236,6 @@ void setup() {
   });
 
   server.begin();
-
   udp.begin(udpPort);
 }
 
@@ -242,34 +247,82 @@ void loop() {
   }
 
   server.handleClient();
-
   M5.update();
 
-  if (M5.BtnA.wasPressed()) {
-    pendingRestart = true;
+  unsigned long now = millis();
+
+  // Reconnect Wi-Fi if connection drops
+  if (now - lastWifiCheckTime >= 5000) {
+    lastWifiCheckTime = now;
+    if (WiFi.status() != WL_CONNECTED) {
+      WiFi.reconnect();
+    }
   }
 
-  unsigned long now = millis();
+  // Button handling: short press = restart (x4 packets), long press (>1.2s) = calibrate neutral
+  if (M5.BtnA.wasPressed()) {
+    btnPressStartTime = now;
+    isCalibrating = false;
+  }
+  if (M5.BtnA.isPressed()) {
+    if (!isCalibrating && (now - btnPressStartTime >= 1200)) {
+      isCalibrating = true;
+      rollOffsetDeg = fusedRollDeg;
+      prefs.begin("wifi-config", false);
+      prefs.putFloat("roll_offset", rollOffsetDeg);
+      prefs.end();
+
+      canvas.fillSprite(TFT_BLACK);
+      canvas.setTextColor(TFT_GREEN);
+      canvas.drawString("ZERO CALIBRATED", 10, 56);
+      canvas.pushSprite(0, 0);
+      delay(600);
+    }
+  }
+  if (M5.BtnA.wasReleased()) {
+    if (!isCalibrating) {
+      restartPacketsRemaining = 4;
+    }
+    isCalibrating = false;
+  }
+
   if (now - lastSampleTime >= 20) { // 50 Hz loop
+    float dt = (now - lastSampleTime) * 0.001f;
     lastSampleTime = now;
 
     float ax = 0, ay = 0, az = 0;
+    float gx = 0, gy = 0, gz = 0;
     M5.Imu.getAccel(&ax, &ay, &az);
+    M5.Imu.getGyro(&gx, &gy, &gz);
 
-    float rollRad = atan2(ax, sqrt(ay * ay + az * az));
-    float rollDeg = rollRad * 180.0f / PI;
+    float accelRollRad = atan2(ax, sqrt(ay * ay + az * az));
+    float accelRollDeg = accelRollRad * 180.0f / PI;
 
-    float rawSteer = constrain(rollDeg / 28.0f, -1.0f, 1.0f);
-    if (abs(rawSteer) < 0.05f) rawSteer = 0.0f;
+    // Gyroscope roll rate around Y axis (in deg/s)
+    float gyroRollRate = gy;
+
+    // Complementary filter: fuse gyroscope and accelerometer
+    fusedRollDeg = 0.96f * (fusedRollDeg + gyroRollRate * dt) + 0.04f * accelRollDeg;
+
+    // Subtract calibrated roll offset
+    float calibratedRoll = fusedRollDeg - rollOffsetDeg;
+
+    float rawSteer = constrain(calibratedRoll / 28.0f, -1.0f, 1.0f);
+    if (fabsf(rawSteer) < 0.05f) rawSteer = 0.0f;
 
     filteredSteer += (rawSteer - filteredSteer) * 0.35f;
+
+    uint8_t restartFlag = 0;
+    if (restartPacketsRemaining > 0) {
+      restartFlag = 1;
+      restartPacketsRemaining--;
+    }
 
     ControllerPacket pkt;
     pkt.magic   = PACKET_MAGIC;
     pkt.seq     = packetSeq++;
-    pkt.restart = pendingRestart ? 1 : 0;
-    pkt.steer = filteredSteer;
-    pendingRestart = false;
+    pkt.restart = restartFlag;
+    pkt.steer   = filteredSteer;
 
     udp.beginPacket(piIP, udpPort);
     udp.write((uint8_t*)&pkt, sizeof(pkt));

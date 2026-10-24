@@ -1,13 +1,14 @@
 export class InputManager {
-  private steerValue = 0; // [-1.0 (Left) to 1.0 (Right)]
   private leftPressed = false;
   private rightPressed = false;
-  private activeTouchId: number | null = null;
+  public activeTouchId: number | null = null;
+  private touchSteer: number | null = null;
 
   // Accelerometer / IMU Sensor WebSocket Bridge (Raspberry Pi or Wireless ESP32)
   private ws: WebSocket | null = null;
   public isSensorConnected = false;
   private sensorSteer = 0;
+  private lastSensorPacketTime = 0;
   public onButtonAction?: (action: string) => void;
 
   private reconnectTimeoutId: number | null = null;
@@ -30,9 +31,17 @@ export class InputManager {
   private initSensorWebSocket(): void {
     if (this.isDisposed) return;
 
-    // Support custom ESP32 IP via URL query (e.g. http://localhost:3000/?sensor=192.168.1.50)
+    // Only connect if '?sensor' query parameter is explicitly provided
+    // e.g. http://localhost:3000/?sensor or http://localhost:3000/?sensor=192.168.1.50
     const urlParams = new URLSearchParams(window.location.search);
-    const sensorHost = urlParams.get('sensor') || window.location.hostname || 'localhost';
+    if (!urlParams.has('sensor')) {
+      return;
+    }
+
+    const sensorParam = urlParams.get('sensor');
+    const sensorHost = (sensorParam && sensorParam.trim().length > 0)
+      ? sensorParam.trim()
+      : (window.location.hostname || 'localhost');
     const wsUrl = `ws://${sensorHost}:8080`;
 
     try {
@@ -46,9 +55,9 @@ export class InputManager {
           const data = JSON.parse(event.data);
           if (data && typeof data.steer === 'number') {
             this.sensorSteer = data.steer;
-            this.updateSteer();
+            this.lastSensorPacketTime = performance.now();
           } else if (data && data.type === 'button' && this.onButtonAction) {
-            this.onButtonAction(data.action || 'click');
+            this.onButtonAction(data.action || 'restart');
           }
         } catch {
           // Ignore parse errors
@@ -57,7 +66,7 @@ export class InputManager {
       this.ws.onclose = () => {
         this.isSensorConnected = false;
         if (!this.isDisposed) {
-          // Retry connection every 4 seconds
+          // Retry connection every 4 seconds only if ?sensor was explicitly requested
           this.reconnectTimeoutId = window.setTimeout(() => this.initSensorWebSocket(), 4000);
         }
       };
@@ -72,69 +81,146 @@ export class InputManager {
   private onKeyDown = (e: KeyboardEvent): void => {
     if (e.code === 'KeyA' || e.code === 'ArrowLeft') this.leftPressed = true;
     if (e.code === 'KeyD' || e.code === 'ArrowRight') this.rightPressed = true;
-    this.updateSteer();
+
+    if (e.code === 'Escape' || e.code === 'KeyP') {
+      this.onButtonAction?.('pause');
+    }
+    if (e.code === 'Space' || e.code === 'Enter') {
+      this.onButtonAction?.('start_or_restart');
+    }
   };
 
   private onKeyUp = (e: KeyboardEvent): void => {
     if (e.code === 'KeyA' || e.code === 'ArrowLeft') this.leftPressed = false;
     if (e.code === 'KeyD' || e.code === 'ArrowRight') this.rightPressed = false;
-    this.updateSteer();
   };
 
-  private onTouchStart = (e: TouchEvent): void => {
-    e.preventDefault();
-    if (e.touches.length === 0) return;
-    const touch = e.touches[0];
-    this.activeTouchId = touch.identifier;
+  private isInteractiveTarget(target: EventTarget | null): boolean {
+    return Boolean(
+      (target as HTMLElement | null)?.closest?.(
+        'button, #gameover-modal, #start-modal, #pause-modal, #dbg-toggle-btn'
+      )
+    );
+  }
 
-    // Left half: -1.0, Right half: +1.0
-    const midX = window.innerWidth * 0.5;
-    this.steerValue = touch.clientX < midX ? -1.0 : 1.0;
+  private onTouchStart = (e: TouchEvent): void => {
+    if (this.isInteractiveTarget(e.target)) {
+      return;
+    }
+    e.preventDefault();
+    this.updateMultiTouch(e.touches, e.changedTouches);
   };
 
   private onTouchMove = (e: TouchEvent): void => {
-    e.preventDefault();
-    for (let i = 0; i < e.touches.length; i++) {
-      if (e.touches[i].identifier === this.activeTouchId) {
-        const touch = e.touches[i];
-        const midX = window.innerWidth * 0.5;
-        this.steerValue = touch.clientX < midX ? -1.0 : 1.0;
-        break;
-      }
+    if (this.isInteractiveTarget(e.target)) {
+      return;
     }
+    e.preventDefault();
+    this.updateMultiTouch(e.touches);
   };
 
   private onTouchEnd = (e: TouchEvent): void => {
-    e.preventDefault();
-    if (e.touches.length === 0) {
-      this.activeTouchId = null;
-      this.updateSteer();
+    if (this.isInteractiveTarget(e.target)) {
+      return;
     }
+    e.preventDefault();
+    this.updateMultiTouch(e.touches);
   };
 
-  private updateSteer(): void {
-    if (this.activeTouchId !== null) {
-      return; // Touch takes priority when active
-    }
-
-    if (this.isSensorConnected) {
-      // Physical sensor tilt (Raspberry Pi GPIO or wireless ESP32)
-      this.steerValue = this.sensorSteer;
+  private updateMultiTouch(touches: TouchList, changedTouches?: TouchList): void {
+    if (touches.length === 0) {
+      this.activeTouchId = null;
+      this.touchSteer = null;
       return;
     }
 
-    // Keyboard fallback: Left = -1.0, Right = +1.0
-    if (this.leftPressed && !this.rightPressed) {
-      this.steerValue = -1.0;
-    } else if (this.rightPressed && !this.leftPressed) {
-      this.steerValue = 1.0;
-    } else {
-      this.steerValue = 0.0;
+    const midX = window.innerWidth * 0.5;
+    let hasLeft = false;
+    let hasRight = false;
+
+    for (let i = 0; i < touches.length; i++) {
+      if (touches[i].clientX < midX) {
+        hasLeft = true;
+      } else {
+        hasRight = true;
+      }
+    }
+
+    if (hasLeft && hasRight) {
+      this.touchSteer = 0.0;
+    } else if (hasLeft) {
+      this.touchSteer = -1.0;
+      if (changedTouches && changedTouches.length > 0) {
+        this.activeTouchId = changedTouches[0].identifier;
+      }
+    } else if (hasRight) {
+      this.touchSteer = 1.0;
+      if (changedTouches && changedTouches.length > 0) {
+        this.activeTouchId = changedTouches[0].identifier;
+      }
     }
   }
 
+  private getGamepadSteer(): number | null {
+    if (typeof navigator === 'undefined' || !navigator.getGamepads) {
+      return null;
+    }
+
+    const gamepads = navigator.getGamepads();
+    for (let i = 0; i < gamepads.length; i++) {
+      const gp = gamepads[i];
+      if (!gp) continue;
+
+      // Left analog stick X-axis (deadzone 0.12)
+      if (gp.axes && gp.axes.length > 0) {
+        const axisX = gp.axes[0];
+        if (Math.abs(axisX) > 0.12) {
+          return Math.max(-1.0, Math.min(1.0, axisX));
+        }
+      }
+
+      // D-pad Left (14) / Right (15)
+      if (gp.buttons && gp.buttons.length > 15) {
+        const dpadLeft = gp.buttons[14]?.pressed;
+        const dpadRight = gp.buttons[15]?.pressed;
+        if (dpadLeft && !dpadRight) return -1.0;
+        if (dpadRight && !dpadLeft) return 1.0;
+        if (dpadLeft && dpadRight) return 0.0;
+      }
+    }
+
+    return null;
+  }
+
   public getSteer(): number {
-    return this.steerValue;
+    // 1. Touch priority (when active fingers on screen)
+    if (this.touchSteer !== null) {
+      return this.touchSteer;
+    }
+
+    // 2. Keyboard priority
+    if (this.leftPressed && !this.rightPressed) {
+      return -1.0;
+    }
+    if (this.rightPressed && !this.leftPressed) {
+      return 1.0;
+    }
+    if (this.leftPressed && this.rightPressed) {
+      return 0.0;
+    }
+
+    // 3. Sensor priority (if connected and received packet within last 350ms)
+    if (this.isSensorConnected && (performance.now() - this.lastSensorPacketTime <= 350)) {
+      return this.sensorSteer;
+    }
+
+    // 4. Gamepad priority (analog left stick or D-pad)
+    const gpSteer = this.getGamepadSteer();
+    if (gpSteer !== null) {
+      return gpSteer;
+    }
+
+    return 0.0;
   }
 
   public dispose(): void {

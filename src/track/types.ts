@@ -12,8 +12,9 @@ export interface GenerateTrackChunkRequest {
   startDist: number;
   chunkLength: number;
   segments: number;
-  trackWidth: number;
+  trackWidth?: number;
   generationId?: number;
+  runSeed?: number;
 }
 
 export interface GenerateTrackChunkResponse {
@@ -23,7 +24,7 @@ export interface GenerateTrackChunkResponse {
   positions: Float32Array;
   normals: Float32Array;
   uvs: Float32Array;
-  indices: Uint32Array;
+  indices: Uint16Array;
   obstacleAnchors: ObstacleAnchor[];
   generationId?: number;
 }

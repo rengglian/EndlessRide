@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { SplineTrack } from './SplineTrack';
+import { getGroundHeightAtOffset } from './trackMath';
 import type { GenerateTrackChunkResponse } from './types';
 
-// Shared materials for roadside scenery
+// Shared materials for roadside scenery (Sec 4.1)
 const trunkMat = new THREE.MeshStandardMaterial({
   color: 0x4a2e18,
   roughness: 0.9,
@@ -27,16 +28,24 @@ const bushMat = new THREE.MeshStandardMaterial({
   flatShading: true
 });
 
-// Shared geometries for scenery (trunks embedded 0.5m into ground to prevent floating)
+// Shared geometries for scenery (trunks embedded into ground to prevent floating)
 const trunkGeom = new THREE.CylinderGeometry(0.22, 0.42, 2.6, 5);
 const foliageBottomGeom = new THREE.ConeGeometry(1.7, 2.4, 6);
 const foliageTopGeom = new THREE.ConeGeometry(1.25, 1.9, 6);
 const bushGeom = new THREE.DodecahedronGeometry(0.9, 1);
 
+// Scratch vectors and matrices to eliminate per-frame/chunk GC allocations
 const _treePos = new THREE.Vector3();
 const _treeTangent = new THREE.Vector3();
 const _treeNormal = new THREE.Vector3();
 const _treeUp = new THREE.Vector3();
+const _partPos = new THREE.Vector3();
+const _partScale = new THREE.Vector3();
+const _rotQuat = new THREE.Quaternion();
+const _yawQuat = new THREE.Quaternion();
+const _upAxis = new THREE.Vector3(0, 1, 0);
+const _instMatrix = new THREE.Matrix4();
+const _zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
 
 export class TrackChunk {
   public chunkIndex: number;
@@ -47,9 +56,13 @@ export class TrackChunk {
   public material: THREE.MeshStandardMaterial;
 
   public sceneryGroup: THREE.Group;
-  private readonly sceneryCount = 6;
-  private treePool: THREE.Group[] = [];
-  private bushPool: THREE.Mesh[] = [];
+  public readonly sceneryCount = 6;
+
+  // 4 InstancedMeshes per chunk replacing individual mesh groups (Sec 4.1: 4 draw calls instead of 24)
+  private trunkInstanced: THREE.InstancedMesh;
+  private folBottomInstanced: THREE.InstancedMesh;
+  private folTopInstanced: THREE.InstancedMesh;
+  private bushInstanced: THREE.InstancedMesh;
 
   constructor(
     data: GenerateTrackChunkResponse,
@@ -72,46 +85,37 @@ export class TrackChunk {
     this.mesh.castShadow = false;
 
     this.sceneryGroup = new THREE.Group();
+    this.sceneryGroup.matrixAutoUpdate = false;
     this.mesh.add(this.sceneryGroup);
 
-    // Pre-allocate fixed pool of scenery objects once to eliminate per-chunk allocations
-    this.initSceneryPool();
+    // Pre-allocate 4 InstancedMeshes for scenery
+    this.trunkInstanced = new THREE.InstancedMesh(trunkGeom, trunkMat, this.sceneryCount);
+    this.trunkInstanced.castShadow = true;
+    this.trunkInstanced.receiveShadow = false;
+    this.trunkInstanced.matrixAutoUpdate = false;
+
+    this.folBottomInstanced = new THREE.InstancedMesh(foliageBottomGeom, foliageMat, this.sceneryCount);
+    this.folBottomInstanced.castShadow = true;
+    this.folBottomInstanced.receiveShadow = false;
+    this.folBottomInstanced.matrixAutoUpdate = false;
+
+    this.folTopInstanced = new THREE.InstancedMesh(foliageTopGeom, foliageLightMat, this.sceneryCount);
+    this.folTopInstanced.castShadow = true;
+    this.folTopInstanced.receiveShadow = false;
+    this.folTopInstanced.matrixAutoUpdate = false;
+
+    this.bushInstanced = new THREE.InstancedMesh(bushGeom, bushMat, this.sceneryCount);
+    this.bushInstanced.castShadow = true;
+    this.bushInstanced.receiveShadow = true;
+    this.bushInstanced.matrixAutoUpdate = false;
+
+    this.sceneryGroup.add(this.trunkInstanced);
+    this.sceneryGroup.add(this.folBottomInstanced);
+    this.sceneryGroup.add(this.folTopInstanced);
+    this.sceneryGroup.add(this.bushInstanced);
 
     if (spline) {
       this.populateScenery(spline);
-    }
-  }
-
-  private initSceneryPool(): void {
-    for (let i = 0; i < this.sceneryCount; i++) {
-      // Bush mesh
-      const bush = new THREE.Mesh(bushGeom, bushMat);
-      bush.castShadow = true;
-      bush.receiveShadow = true;
-      bush.visible = false;
-      this.bushPool.push(bush);
-      this.sceneryGroup.add(bush);
-
-      // Tree group
-      const tree = new THREE.Group();
-      const trunk = new THREE.Mesh(trunkGeom, trunkMat);
-      trunk.position.y = 1.0;
-      trunk.castShadow = true;
-      tree.add(trunk);
-
-      const folBottom = new THREE.Mesh(foliageBottomGeom, foliageMat);
-      folBottom.position.y = 2.6;
-      folBottom.castShadow = true;
-      tree.add(folBottom);
-
-      const folTop = new THREE.Mesh(foliageTopGeom, foliageLightMat);
-      folTop.position.y = 3.9;
-      folTop.castShadow = true;
-      tree.add(folTop);
-
-      tree.visible = false;
-      this.treePool.push(tree);
-      this.sceneryGroup.add(tree);
     }
   }
 
@@ -148,7 +152,7 @@ export class TrackChunk {
     }
 
     if (indexAttr && indexAttr.array.length === data.indices.length) {
-      (indexAttr.array as Uint32Array).set(data.indices);
+      (indexAttr.array as Uint16Array).set(data.indices);
       indexAttr.needsUpdate = true;
     } else {
       this.geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
@@ -162,68 +166,94 @@ export class TrackChunk {
     }
   }
 
-  /**
-   * Computes ground surface elevation at lateral offset u.
-   */
-  private getGroundHeightAtOffset(u: number): number {
-    const absU = Math.abs(u);
-    if (absU <= 3.8) {
-      return 0.0;
-    } else if (absU <= 4.0) {
-      return 0.12 * ((absU - 3.8) / 0.2);
-    } else if (absU <= 6.5) {
-      return 0.12 + 0.13 * ((absU - 4.0) / 2.5);
-    } else if (absU <= 18.0) {
-      return 0.25 + 0.35 * ((absU - 6.5) / 11.5);
-    } else if (absU <= 36.0) {
-      return 0.60 - 1.40 * ((absU - 18.0) / 18.0);
-    }
-    return -0.8;
-  }
-
   private populateScenery(spline: SplineTrack): void {
     for (let i = 0; i < this.sceneryCount; i++) {
       // Deterministic pseudo-random variation per chunk and slot
       const seed = Math.abs(this.chunkIndex * 73856093) ^ (i * 19349663);
       const rand1 = ((seed & 0xffff) / 65535);
       const rand2 = (((seed >> 16) & 0xffff) / 65535);
+      const randYaw = (((seed ^ (seed >> 8)) & 0xffff) / 65535) * Math.PI * 2;
 
       const s = this.startDist + (i + 0.15 + rand1 * 0.7) * (this.chunkLength / this.sceneryCount);
       const side = (i + (this.chunkIndex % 2)) % 2 === 0 ? 1 : -1;
       const uOffset = side * (7.0 + rand2 * 11.0); // 7.0m to 18.0m in meadow hills
-      const groundH = this.getGroundHeightAtOffset(uOffset);
+      const groundH = getGroundHeightAtOffset(uOffset);
 
       // Sample banked frame to sit flush on banked meadow surface
       spline.getBankedTransformAt(s, uOffset, groundH, _treePos, _treeTangent, _treeNormal, _treeUp);
 
-      const bush = this.bushPool[i];
-      const tree = this.treePool[i];
+      // Align base orientation with terrain banked up, plus random Y-rotation for visual variety (Sec 6.4)
+      _rotQuat.setFromUnitVectors(_upAxis, _treeUp);
+      _yawQuat.setFromAxisAngle(_treeUp, randYaw);
+      _rotQuat.premultiply(_yawQuat);
 
       const isBush = (i + this.chunkIndex) % 3 === 0;
 
       if (isBush) {
-        if (tree) tree.visible = false;
-        if (bush) {
-          bush.visible = true;
-          bush.position.copy(_treePos);
-          // Embedded slightly into surface along banked up
-          bush.position.addScaledVector(_treeUp, 0.32);
-          const bScale = 0.95 + rand2 * 0.45;
-          bush.scale.set(bScale * 1.2, bScale * 0.85, bScale * 1.2);
-        }
+        // Bush slot: collapse tree instance matrices to zero scale
+        this.trunkInstanced.setMatrixAt(i, _zeroMatrix);
+        this.folBottomInstanced.setMatrixAt(i, _zeroMatrix);
+        this.folTopInstanced.setMatrixAt(i, _zeroMatrix);
+
+        // Position bush embedded slightly into surface
+        const bScale = 0.95 + rand2 * 0.45;
+        _partPos.copy(_treePos).addScaledVector(_treeUp, 0.32);
+        _partScale.set(bScale * 1.2, bScale * 0.85, bScale * 1.2);
+        _instMatrix.compose(_partPos, _rotQuat, _partScale);
+        this.bushInstanced.setMatrixAt(i, _instMatrix);
       } else {
-        if (bush) bush.visible = false;
-        if (tree) {
-          tree.visible = true;
-          tree.position.copy(_treePos);
-          const tScale = 0.85 + rand1 * 0.45;
-          tree.scale.set(tScale, tScale, tScale);
-        }
+        // Tree slot: collapse bush instance matrix to zero scale
+        this.bushInstanced.setMatrixAt(i, _zeroMatrix);
+
+        const tScale = 0.85 + rand1 * 0.45;
+        _partScale.set(tScale, tScale, tScale);
+
+        // Trunk
+        _partPos.copy(_treePos).addScaledVector(_treeUp, 1.0 * tScale);
+        _instMatrix.compose(_partPos, _rotQuat, _partScale);
+        this.trunkInstanced.setMatrixAt(i, _instMatrix);
+
+        // Foliage lower tier
+        _partPos.copy(_treePos).addScaledVector(_treeUp, 2.6 * tScale);
+        _instMatrix.compose(_partPos, _rotQuat, _partScale);
+        this.folBottomInstanced.setMatrixAt(i, _instMatrix);
+
+        // Foliage upper tier
+        _partPos.copy(_treePos).addScaledVector(_treeUp, 3.9 * tScale);
+        _instMatrix.compose(_partPos, _rotQuat, _partScale);
+        this.folTopInstanced.setMatrixAt(i, _instMatrix);
       }
     }
+
+    // Flag instance matrices for GPU upload and update bounding spheres for frustum culling
+    this.trunkInstanced.instanceMatrix.needsUpdate = true;
+    this.folBottomInstanced.instanceMatrix.needsUpdate = true;
+    this.folTopInstanced.instanceMatrix.needsUpdate = true;
+    this.bushInstanced.instanceMatrix.needsUpdate = true;
+
+    this.trunkInstanced.computeBoundingSphere();
+    this.folBottomInstanced.computeBoundingSphere();
+    this.folTopInstanced.computeBoundingSphere();
+    this.bushInstanced.computeBoundingSphere();
+  }
+
+  public static disposeSharedResources(): void {
+    trunkGeom.dispose();
+    foliageBottomGeom.dispose();
+    foliageTopGeom.dispose();
+    bushGeom.dispose();
+
+    trunkMat.dispose();
+    foliageMat.dispose();
+    foliageLightMat.dispose();
+    bushMat.dispose();
   }
 
   public dispose(): void {
     this.geometry.dispose();
+    this.trunkInstanced.dispose();
+    this.folBottomInstanced.dispose();
+    this.folTopInstanced.dispose();
+    this.bushInstanced.dispose();
   }
 }

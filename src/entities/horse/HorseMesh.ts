@@ -361,6 +361,14 @@ export class HorseMesh {
   }
 
   public dispose(): void {
+    this.rootGroup.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        if (mesh.geometry) {
+          mesh.geometry.dispose();
+        }
+      }
+    });
     this.coatMat.dispose();
     this.darkMat.dispose();
     this.whiteMarkingMat.dispose();

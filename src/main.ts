@@ -9,6 +9,9 @@ window.addEventListener('DOMContentLoaded', () => {
   const engine = new Engine(canvas);
   engine.start();
 
-  // Export engine for debugging
-  (window as any).__engine = engine;
+  // Export engine for debugging only in DEV mode
+  const isDev = Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
+  if (isDev) {
+    (window as unknown as Record<string, unknown>).__engine = engine;
+  }
 });

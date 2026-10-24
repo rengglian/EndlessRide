@@ -1,70 +1,88 @@
 import * as THREE from 'three';
+import {
+  GEOMETRIC_BANK_SPEED,
+  LANE_OFFSETS,
+  PATH_HALF_WIDTH
+} from '../config';
+import {
+  sampleSplinePoint,
+  sampleSplineTangent,
+  sampleArcLengthFactor,
+  computeGeometricBankAngle,
+  computeVisualBankAngle,
+  computeBankedFrame,
+  getGroundHeightAtOffset,
+  getGroundSlopeAtOffset
+} from './trackMath';
 
-const _tangent = new THREE.Vector3();
 const _upTmp = new THREE.Vector3();
 
 export class SplineTrack {
-  public static readonly LANE_OFFSETS = {
-    left: -2.3,
-    center: 0.0,
-    right: 2.3
-  };
-
-  public static readonly HALF_WIDTH = 3.8;
+  public static readonly LANE_OFFSETS = LANE_OFFSETS;
+  public static readonly HALF_WIDTH = PATH_HALF_WIDTH;
 
   /**
-   * Sample the central spine position at arc-length distance s.
+   * Sample the central spine position at arc-length parameter s.
    */
   public getPointAtDistance(s: number, outPoint: THREE.Vector3): void {
-    const validS = isNaN(s) ? 0 : s;
-    const x = 14.0 * Math.sin(0.012 * validS) + 6.0 * Math.sin(0.028 * validS + 1.2);
-    const y = 3.5 * Math.sin(0.018 * validS);
-    const z = validS;
-    outPoint.set(x, y, z);
+    const pt = sampleSplinePoint(s);
+    outPoint.set(pt.x, pt.y, pt.z);
   }
 
   /**
-   * Sample the forward normalized tangent vector at distance s.
+   * Sample the forward normalized tangent vector at parameter s.
    */
   public getTangentAtDistance(s: number, outTangent: THREE.Vector3): void {
-    const validS = isNaN(s) ? 0 : s;
-    const dx = 14.0 * 0.012 * Math.cos(0.012 * validS) + 6.0 * 0.028 * Math.cos(0.028 * validS + 1.2);
-    const dy = 3.5 * 0.018 * Math.cos(0.018 * validS);
-    const dz = 1.0;
-    outTangent.set(dx, dy, dz).normalize();
+    const tan = sampleSplineTangent(s);
+    outTangent.set(tan.x, tan.y, tan.z);
   }
 
   /**
-   * Sample the horizontal rightward lateral normal vector at distance s.
-   * Tangent(dx,dy,dz) x UP(0,1,0) = (-dz, 0, dx) pointing toward -X (screen-right).
+   * Arc-length scaling factor |dP/ds|. True ground advance ds = (speed * dt) / factor (Sec 3.4).
+   */
+  public getArcLengthFactor(s: number): number {
+    return sampleArcLengthFactor(s);
+  }
+
+  /**
+   * Sample the unbanked horizontal rightward lateral normal vector at parameter s.
    */
   public getNormalAtDistance(s: number, outNormal: THREE.Vector3): void {
-    this.getTangentAtDistance(s, _tangent);
-    const hNx = -_tangent.z;
-    const hNz = _tangent.x;
+    const tan = sampleSplineTangent(s);
+    const hNx = -tan.z;
+    const hNz = tan.x;
     const len = Math.hypot(hNx, hNz) || 1.0;
     outNormal.set(hNx / len, 0, hNz / len);
   }
 
   /**
-   * Compute banking roll angle in radians at distance s.
-   * Curve bending toward +X (screen-left, d2x > 0) produces negative roll angle to lean left.
-   * Curve bending toward -X (screen-right, d2x < 0) produces positive roll angle to lean right.
+   * Intrinsic geometric banking angle of the track geometry (speed-independent, Sec 3.3).
    */
-  public getBankingAngleAtDistance(s: number, forwardSpeed = 12.0): number {
-    const validS = isNaN(s) ? 0 : s;
-    const validSpeed = isNaN(forwardSpeed) ? 12.0 : forwardSpeed;
-
-    const d2x = -14.0 * 0.012 * 0.012 * Math.sin(0.012 * validS) - 6.0 * 0.028 * 0.028 * Math.sin(0.028 * validS + 1.2);
-    const curvature = Math.abs(d2x);
-    const sign = d2x > 0 ? -1 : 1;
-    const g = 9.81;
-    const rawBank = (validSpeed * validSpeed * curvature) / g;
-    return THREE.MathUtils.clamp(sign * rawBank * 2.0, -0.22, 0.22);
+  public getGeometricBankAngle(s: number): number {
+    return computeGeometricBankAngle(s);
   }
 
   /**
-   * Computes the complete banked frame (center position, tangent, banked lateral, banked up) at distance s.
+   * Speed-dependent banking angle in radians for visual lean/HUD (Sec 3.3).
+   */
+  public getVisualBankAngle(s: number, speed: number): number {
+    return computeVisualBankAngle(s, speed);
+  }
+
+  /**
+   * Compute banking roll angle in radians at parameter s.
+   * If forwardSpeed equals GEOMETRIC_BANK_SPEED (12.0), returns geometric track bank;
+   * otherwise returns speed-scaled visual bank angle.
+   */
+  public getBankingAngleAtDistance(s: number, forwardSpeed: number = GEOMETRIC_BANK_SPEED): number {
+    if (forwardSpeed === GEOMETRIC_BANK_SPEED) {
+      return computeGeometricBankAngle(s);
+    }
+    return computeVisualBankAngle(s, forwardSpeed);
+  }
+
+  /**
+   * Computes the complete banked frame (center position, tangent, banked lateral, banked up) at parameter s.
    * Returns banking angle in radians.
    */
   public getBankedFrameAt(
@@ -73,41 +91,28 @@ export class SplineTrack {
     outTangent: THREE.Vector3,
     outLateral: THREE.Vector3,
     outUp: THREE.Vector3,
-    forwardSpeed = 12.0
+    forwardSpeed: number = GEOMETRIC_BANK_SPEED
   ): number {
-    const validS = isNaN(s) ? 0 : s;
-    this.getPointAtDistance(validS, outPos);
-    this.getTangentAtDistance(validS, outTangent);
-    this.getNormalAtDistance(validS, outLateral); // Unbanked rightward normal
+    const frame = computeBankedFrame(s, forwardSpeed);
+    outPos.set(frame.point.x, frame.point.y, frame.point.z);
+    outTangent.set(frame.tangent.x, frame.tangent.y, frame.tangent.z);
+    outLateral.set(frame.lateral.x, frame.lateral.y, frame.lateral.z);
+    outUp.set(frame.up.x, frame.up.y, frame.up.z);
+    return frame.bankAngle;
+  }
 
-    const normX = outLateral.x;
-    const normZ = outLateral.z;
+  /**
+   * Get terrain ground surface height at lateral offset u.
+   */
+  public getGroundHeight(u: number): number {
+    return getGroundHeightAtOffset(u);
+  }
 
-    // Orthonormal Up = (Tangent x Lateral) / |Tangent x Lateral|:
-    // Using horizontal normal length hLen = sqrt((tx*normZ - tz*normX)^2) = sqrt(tx^2 + tz^2)
-    const upY = normZ * outTangent.x - normX * outTangent.z;
-    const upX = -outTangent.y * normZ;
-    const upZ = outTangent.y * normX;
-
-    const bank = this.getBankingAngleAtDistance(validS, forwardSpeed);
-    const cosB = Math.cos(bank);
-    const sinB = Math.sin(bank);
-
-    // Right-hand rule rotation around Tangent (+Z) by angle bank:
-    // Positive bank (d2x < 0, turn right toward -X) lowers the right edge (+u) and raises the left edge (-u).
-    outLateral.set(
-      normX * cosB + upX * sinB,
-      upY * sinB,
-      normZ * cosB + upZ * sinB
-    );
-
-    outUp.set(
-      -normX * sinB + upX * cosB,
-      upY * cosB,
-      -normZ * sinB + upZ * cosB
-    );
-
-    return bank;
+  /**
+   * Get terrain cross-section slope dh/du at lateral offset u.
+   */
+  public getGroundSlope(u: number): number {
+    return getGroundSlopeAtOffset(u);
   }
 
   /**
@@ -125,8 +130,6 @@ export class SplineTrack {
     const validOffset = isNaN(lateralOffset) ? 0 : lateralOffset;
 
     this.getBankedFrameAt(validDist, outPos, outTangent, outNormal, _upTmp);
-
-    // Apply lateral offset along banked rightward normal
     outPos.addScaledVector(outNormal, validOffset);
   }
 
@@ -147,7 +150,6 @@ export class SplineTrack {
     const validH = isNaN(groundHeight) ? 0 : groundHeight;
 
     this.getBankedFrameAt(validDist, outPos, outTangent, outNormal, outUp);
-
     outPos.addScaledVector(outNormal, validOffset);
     outPos.addScaledVector(outUp, validH);
   }

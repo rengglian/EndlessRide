@@ -100,6 +100,7 @@ PACKET_FORMAT = "<HBBf" # uint16 magic (2B), uint8 seq (1B), uint8 restart (1B),
 PACKET_SIZE = struct.calcsize(PACKET_FORMAT)
 
 last_atoms3_time = 0.0
+last_restart_state = 0
 
 class AtomS3UDPProtocol(asyncio.DatagramProtocol):
     def connection_made(self, transport):
@@ -107,26 +108,26 @@ class AtomS3UDPProtocol(asyncio.DatagramProtocol):
         print("[OK] AtomS3 UDP receiver active for 8-byte ControllerPacket datagrams")
 
     def datagram_received(self, data, addr):
-        global last_atoms3_time
+        global last_atoms3_time, last_restart_state
         if len(data) == PACKET_SIZE:
             magic, seq, restart, steer = struct.unpack(PACKET_FORMAT, data)
             if magic == PACKET_MAGIC:
-                last_atoms3_time = time.time()
+                last_atoms3_time = time.monotonic()
                 if connected_clients:
                     msg = json.dumps({
                         "type": "sensor",
                         "steer": round(steer, 3),
                         "seq": seq
                     })
-                    for client in list(connected_clients):
-                        asyncio.create_task(client.send(msg))
-                    if restart:
+                    websockets.broadcast(connected_clients, msg)
+                    # Edge-detect restart flag across repeated UDP packets
+                    if restart and not last_restart_state:
                         btn_msg = json.dumps({
                             "type": "button",
                             "action": "restart"
                         })
-                        for client in list(connected_clients):
-                            asyncio.create_task(client.send(btn_msg))
+                        websockets.broadcast(connected_clients, btn_msg)
+                last_restart_state = restart
 
 async def sensor_loop():
     global filtered_steer
@@ -134,19 +135,23 @@ async def sensor_loop():
 
     while True:
         # If AtomS3 wireless controller is actively streaming, yield to it
-        if time.time() - last_atoms3_time < 1.0:
+        if time.monotonic() - last_atoms3_time < 1.0:
             await asyncio.sleep(0.02)
             continue
 
-        if simulated_mode or bus is None:
+        if simulated_mode:
             # Simulate a smooth steering wave for testing
             sim_t += 0.05
             ax = math.sin(sim_t * 1.5) * 0.6
             ay, az = 0.0, 0.8
-        else:
+            steer = compute_steer(ax, ay, az)
+        elif bus is not None:
             ax, ay, az = read_mpu6050_raw()
-
-        steer = compute_steer(ax, ay, az)
+            steer = compute_steer(ax, ay, az)
+        else:
+            # No physical sensor and simulation not enabled: wait idle without broadcasting fake input
+            await asyncio.sleep(0.05)
+            continue
         
         if connected_clients:
             msg = json.dumps({
@@ -158,11 +163,7 @@ async def sensor_loop():
                     "z": round(az, 3)
                 }
             })
-            # Broadcast to all connected browser windows
-            await asyncio.gather(
-                *[client.send(msg) for client in connected_clients],
-                return_exceptions=True
-            )
+            websockets.broadcast(connected_clients, msg)
 
         await asyncio.sleep(0.02) # 50 Hz sensor sampling
 
@@ -187,8 +188,7 @@ async def main():
     if not simulated_mode:
         has_sensor = init_mpu6050()
         if not has_sensor:
-            print("Falling back to simulated sensor mode. Use --simulate to suppress warning.")
-            simulated_mode = True
+            print("[INFO] No physical I2C sensor detected and --simulate not set. Listening for AtomS3 UDP packets.")
 
     # Start UDP datagram receiver for AtomS3 on the specified port
     loop = asyncio.get_running_loop()
