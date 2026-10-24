@@ -9,6 +9,7 @@ import {
   CHUNKS_BEHIND
 } from '../config';
 import type { ObstacleManager } from '../obstacles/ObstacleManager';
+import type { CollectibleManager } from '../collectibles/CollectibleManager';
 import type {
   GenerateTrackChunkRequest,
   GenerateTrackChunkResponse
@@ -18,6 +19,7 @@ export class TrackChunkManager {
   private scene: THREE.Scene;
   private spline: SplineTrack;
   private obstacleManager: ObstacleManager | null = null;
+  private collectibleManager: CollectibleManager | null = null;
   private worker: Worker | null = null;
   private sharedMaterial: THREE.MeshStandardMaterial;
 
@@ -28,10 +30,16 @@ export class TrackChunkManager {
   private generationId = 0;
   private currentPlayerDistance = 0;
 
-  constructor(scene: THREE.Scene, spline?: SplineTrack, obstacleManager?: ObstacleManager) {
+  constructor(
+    scene: THREE.Scene,
+    spline?: SplineTrack,
+    obstacleManager?: ObstacleManager,
+    collectibleManager?: CollectibleManager
+  ) {
     this.scene = scene;
     this.spline = spline || new SplineTrack();
     this.obstacleManager = obstacleManager || null;
+    this.collectibleManager = collectibleManager || null;
     this.sharedMaterial = this.createTrackMaterial();
 
     try {
@@ -60,6 +68,10 @@ export class TrackChunkManager {
 
   public setObstacleManager(mgr: ObstacleManager): void {
     this.obstacleManager = mgr;
+  }
+
+  public setCollectibleManager(mgr: CollectibleManager): void {
+    this.collectibleManager = mgr;
   }
 
   private createTrackMaterial(): THREE.MeshStandardMaterial {
@@ -282,6 +294,11 @@ export class TrackChunkManager {
     if (this.obstacleManager && data.obstacleAnchors && data.obstacleAnchors.length > 0) {
       this.obstacleManager.spawnChunkObstacles(data.obstacleAnchors, data.chunkIndex);
     }
+
+    // Spawn collectibles for this chunk
+    if (this.collectibleManager && data.collectibleAnchors && data.collectibleAnchors.length > 0) {
+      this.collectibleManager.spawnChunkCollectibles(data.collectibleAnchors, data.chunkIndex);
+    }
   }
 
   private recycleChunk(index: number, chunk: TrackChunk): void {
@@ -292,6 +309,11 @@ export class TrackChunkManager {
     // Recycle obstacles belonging to this chunk
     if (this.obstacleManager) {
       this.obstacleManager.recycleChunkObstacles(index);
+    }
+
+    // Recycle collectibles belonging to this chunk
+    if (this.collectibleManager) {
+      this.collectibleManager.recycleChunkCollectibles(index);
     }
   }
 

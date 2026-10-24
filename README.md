@@ -43,7 +43,8 @@ A high-performance, mobile-optimized 3D endless horse runner game built with **T
   - **Dynamic Rider Kinematics**: Real-time pelvis bobbing, speed-based forward wind tuck, and reactive upper-body banking into turns and dodges.
   - Cached skeletal bone lookups, eliminating per-frame string allocations and regex lookups.
 
-- **Complete Game Flow & Persistence**:
+- **Complete Game Flow, Collectibles & Persistence**:
+  - **Collectibles & Dynamic Multiplier**: Pooled 3D **Apples** (`+0.2x` multiplier, `+25` bonus pts) and **Golden Horseshoes** (`+0.5x` multiplier, `+75` bonus pts) deterministically spawned in open obstacle-wave lanes and mid-segment streaks (`1.0x` up to `5.0x` max multiplier with 7s hold timer).
   - Interactive `START` screen overlay with tap/Space prompt.
   - Interactive `PAUSE` state (`Esc` / `P` / window blur / visibility change).
   - LocalStorage High Score persistence with "New Record!" banner on Game Over.
@@ -228,6 +229,10 @@ EndlessRide/
     ├── main.ts                  # Application bootstrap & lifecycle startup
     ├── camera/
     │   └── RunnerCamera.ts      # Spring-damped 3rd-person follow camera with FOV warp
+    ├── collectibles/
+    │   ├── CollectibleManager.ts # Collectible spawning, spin/bob animation, swept AABB pickup
+    │   ├── CollectiblePool.ts   # Shared 3D Apple & Golden Horseshoe geometry/material pool
+    │   └── types.ts             # Collectible entity interfaces
     ├── core/
     │   └── Engine.ts            # Fixed-timestep loop, game states (Start/Pause/GameOver), lighting
     ├── entities/

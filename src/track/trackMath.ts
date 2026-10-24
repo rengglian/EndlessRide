@@ -12,8 +12,10 @@ import {
 import type {
   GenerateTrackChunkResponse,
   ObstacleAnchor,
+  CollectibleAnchor,
   LaneType,
-  ObstacleType
+  ObstacleType,
+  CollectibleType
 } from './types';
 
 /**
@@ -285,6 +287,128 @@ export function generateObstacleAnchors(
 }
 
 /**
+ * Seeded collectible generation (Apples & Golden Horseshoes) with risk/reward wave distribution
+ * and mid-segment streaks (Sec 6.1).
+ */
+export function generateCollectibleAnchors(
+  startDist: number,
+  chunkLength: number,
+  chunkIndex: number,
+  obstacleAnchors: ObstacleAnchor[],
+  runSeed: number = 1337
+): CollectibleAnchor[] {
+  const collectibles: CollectibleAnchor[] = [];
+  const lanes: LaneType[] = ['left', 'center', 'right'];
+
+  // 100% deterministic PRNG seeded per chunk
+  const seed = (runSeed ^ Math.imul(chunkIndex, 3266489917)) >>> 0;
+  const rng = mulberry32(seed);
+
+  // Skip the first 30m of the run
+  const startOffset = Math.max(15.0, 30.0 - startDist);
+
+  function isObstacleNear(dist: number, lane: LaneType, threshold = 4.5): boolean {
+    return obstacleAnchors.some(
+      obs => obs.lane === lane && Math.abs(obs.distance - dist) < threshold
+    );
+  }
+
+  function isCollectibleNear(dist: number, lane: LaneType, threshold = 1.5): boolean {
+    return collectibles.some(
+      col => col.lane === lane && Math.abs(col.distance - dist) < threshold
+    );
+  }
+
+  // a. Risk/Reward Obstacle-Wave Collectibles
+  // Identify distinct obstacle wave distances in this chunk
+  const waveDistances: number[] = [];
+  for (const obs of obstacleAnchors) {
+    if (!waveDistances.some(d => Math.abs(d - obs.distance) < 2.0)) {
+      waveDistances.push(obs.distance);
+    }
+  }
+
+  for (const waveDist of waveDistances) {
+    if (waveDist < startDist + startOffset || waveDist > startDist + chunkLength - 4.0) {
+      continue;
+    }
+    // At ~65% of obstacle waves:
+    if (rng() < 0.65) {
+      // Pick one of the open lanes at that obstacle wave's distance (no obstacle within ±5.0m)
+      const openLanes = lanes.filter(l => !isObstacleNear(waveDist, l, 5.0));
+      if (openLanes.length > 0) {
+        const chosenLane = openLanes[Math.floor(rng() * openLanes.length)];
+        // 30% probability of horseshoe if double-obstacle wave (openLanes.length === 1), otherwise apple
+        const isDoubleWave = openLanes.length === 1;
+        const type: CollectibleType = (isDoubleWave && rng() < 0.30) ? 'horseshoe' : 'apple';
+
+        if (!isObstacleNear(waveDist, chosenLane, 4.5) && !isCollectibleNear(waveDist, chosenLane, 1.5)) {
+          collectibles.push({
+            distance: waveDist,
+            lane: chosenLane,
+            collectibleType: type
+          });
+        }
+      }
+    }
+  }
+
+  // b. Mid-Segment Collectible Streaks
+  let d = startOffset + 3.0;
+  while (d < chunkLength - 6.0) {
+    const s = startDist + d;
+    // Ensure no obstacle wave within ±5.5m longitudinally
+    const nearAnyWave = obstacleAnchors.some(obs => Math.abs(obs.distance - s) < 5.5);
+
+    if (!nearAnyWave) {
+      const roll = rng();
+      if (roll < 0.50) {
+        // Line of 2-3 apples spaced 3.5m apart along a single lane
+        const lane = lanes[Math.floor(rng() * 3)];
+        const count = rng() < 0.5 ? 2 : 3;
+        for (let k = 0; k < count; k++) {
+          const colDist = s + k * 3.5;
+          if (
+            colDist < startDist + chunkLength - 3.0 &&
+            !isObstacleNear(colDist, lane, 4.5) &&
+            !isCollectibleNear(colDist, lane, 1.5)
+          ) {
+            collectibles.push({
+              distance: colDist,
+              lane,
+              collectibleType: 'apple'
+            });
+          }
+        }
+        d += count * 3.5 + 4.0;
+        continue;
+      } else if (roll < 0.70) {
+        // Single horseshoe (~20% chance: 0.50 to 0.70)
+        const lane = lanes[Math.floor(rng() * 3)];
+        if (
+          !isObstacleNear(s, lane, 4.5) &&
+          !isCollectibleNear(s, lane, 1.5)
+        ) {
+          collectibles.push({
+            distance: s,
+            lane,
+            collectibleType: 'horseshoe'
+          });
+        }
+        d += 8.0;
+        continue;
+      }
+    }
+
+    d += 6.0 + rng() * 4.0;
+  }
+
+  // Sort collectibles in longitudinal order
+  collectibles.sort((a, b) => a.distance - b.distance);
+  return collectibles;
+}
+
+/**
  * Single shared track chunk data generator used by BOTH track.worker.ts and
  * TrackChunkManager synchronous fallback (Sec 3.1, 3.2).
  */
@@ -364,6 +488,7 @@ export function generateChunkData(
   }
 
   const obstacleAnchors = generateObstacleAnchors(startDist, chunkLength, chunkIndex, runSeed);
+  const collectibleAnchors = generateCollectibleAnchors(startDist, chunkLength, chunkIndex, obstacleAnchors, runSeed);
 
   return {
     chunkIndex,
@@ -374,6 +499,7 @@ export function generateChunkData(
     uvs,
     indices,
     obstacleAnchors,
+    collectibleAnchors,
     generationId
   };
 }

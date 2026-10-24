@@ -2,6 +2,11 @@ export class HUD {
   private distElement: HTMLElement | null;
   private speedElement: HTMLElement | null;
   private highScoreElement: HTMLElement | null;
+  private scoreElement: HTMLElement | null;
+  private multiplierElement: HTMLElement | null;
+  private multiplierBarElement: HTMLElement | null;
+  private collectiblesElement: HTMLElement | null;
+  private pickupToastElement: HTMLElement | null;
 
   private startModal: HTMLElement | null;
   private startBtn: HTMLElement | null;
@@ -18,6 +23,13 @@ export class HUD {
   private lastDisplayedDist = -1;
   private lastDisplayedSpeedTenths = -1;
   private lastDisplayedHighScore = -1;
+  private lastDisplayedScore = -1;
+  private lastDisplayedMultiplierTenths = -1;
+  private lastDisplayedApples = -1;
+  private lastDisplayedHorseshoes = -1;
+  private lastDisplayedBarPct = -1;
+
+  private toastTimeoutId: number | null = null;
 
   public onStart?: () => void;
   public onResume?: () => void;
@@ -51,6 +63,11 @@ export class HUD {
     this.distElement = document.getElementById('hud-distance');
     this.speedElement = document.getElementById('hud-speed');
     this.highScoreElement = document.getElementById('hud-high-score');
+    this.scoreElement = document.getElementById('hud-score');
+    this.multiplierElement = document.getElementById('hud-multiplier');
+    this.multiplierBarElement = document.getElementById('hud-multiplier-bar');
+    this.collectiblesElement = document.getElementById('hud-collectibles');
+    this.pickupToastElement = document.getElementById('hud-pickup-toast');
 
     this.startModal = document.getElementById('start-modal');
     this.startBtn = document.getElementById('start-btn');
@@ -76,7 +93,15 @@ export class HUD {
     window.addEventListener('keydown', this.onKeyDownBound);
   }
 
-  public update(distance: number, speed: number): void {
+  public update(
+    distance: number,
+    speed: number,
+    score?: number,
+    multiplier?: number,
+    multiplierProgress?: number,
+    apples?: number,
+    horseshoes?: number
+  ): void {
     const validDist = isNaN(distance) ? 0 : Math.max(0, distance);
     const validSpeed = isNaN(speed) ? 18.0 : speed;
 
@@ -95,6 +120,65 @@ export class HUD {
         this.speedElement.textContent = `${(speedTenths / 10).toFixed(1)} m/s`;
       }
     }
+
+    if (score !== undefined) {
+      const intScore = Math.floor(Math.max(0, score));
+      if (intScore !== this.lastDisplayedScore) {
+        this.lastDisplayedScore = intScore;
+        if (this.scoreElement) {
+          this.scoreElement.textContent = `${intScore.toLocaleString()} pts`;
+        }
+      }
+    }
+
+    if (multiplier !== undefined) {
+      const multTenths = Math.round(multiplier * 10);
+      if (multTenths !== this.lastDisplayedMultiplierTenths) {
+        this.lastDisplayedMultiplierTenths = multTenths;
+        if (this.multiplierElement) {
+          this.multiplierElement.textContent = `${(multTenths / 10).toFixed(1)}x`;
+        }
+      }
+    }
+
+    if (multiplierProgress !== undefined) {
+      const barPct = Math.round(Math.max(0, Math.min(1, multiplierProgress)) * 100);
+      if (barPct !== this.lastDisplayedBarPct) {
+        this.lastDisplayedBarPct = barPct;
+        if (this.multiplierBarElement) {
+          this.multiplierBarElement.style.width = `${barPct}%`;
+        }
+      }
+    }
+
+    if (apples !== undefined && horseshoes !== undefined) {
+      if (apples !== this.lastDisplayedApples || horseshoes !== this.lastDisplayedHorseshoes) {
+        this.lastDisplayedApples = apples;
+        this.lastDisplayedHorseshoes = horseshoes;
+        if (this.collectiblesElement) {
+          this.collectiblesElement.textContent = `🍎 ${apples}  🧲 ${horseshoes}`;
+        }
+      }
+    }
+  }
+
+  public triggerPickupFeedback(type: 'apple' | 'horseshoe', multiplier: number, bonusPoints: number): void {
+    if (!this.pickupToastElement) return;
+
+    if (this.toastTimeoutId !== null) {
+      window.clearTimeout(this.toastTimeoutId);
+      this.toastTimeoutId = null;
+    }
+
+    const icon = type === 'apple' ? '🍎' : '🧲';
+    const multStep = type === 'apple' ? '+0.2x' : '+0.5x';
+    this.pickupToastElement.textContent = `${icon} ${multStep} (${multiplier.toFixed(1)}x · +${bonusPoints} pts)`;
+    this.pickupToastElement.classList.add('show');
+
+    this.toastTimeoutId = window.setTimeout(() => {
+      this.pickupToastElement?.classList.remove('show');
+      this.toastTimeoutId = null;
+    }, 1200);
   }
 
   public updateHighScore(highScore: number): void {
@@ -103,7 +187,7 @@ export class HUD {
     if (intHigh !== this.lastDisplayedHighScore) {
       this.lastDisplayedHighScore = intHigh;
       if (this.highScoreElement) {
-        this.highScoreElement.textContent = `${intHigh} m`;
+        this.highScoreElement.textContent = `${intHigh.toLocaleString()} pts`;
       }
     }
   }
@@ -132,12 +216,24 @@ export class HUD {
     }
   }
 
-  public showGameOver(distance: number, highScore: number, isNewRecord: boolean): void {
+  public showGameOver(
+    distance: number,
+    highScore: number,
+    isNewRecord: boolean,
+    score?: number,
+    apples?: number,
+    horseshoes?: number
+  ): void {
     const validDist = isNaN(distance) ? 0 : Math.max(0, distance);
     const validHigh = isNaN(highScore) ? 0 : Math.max(0, highScore);
 
     if (this.finalStatsElement) {
-      this.finalStatsElement.textContent = `You covered ${Math.floor(validDist)} meters! (Best: ${Math.floor(validHigh)} m)`;
+      if (score !== undefined) {
+        const validScore = isNaN(score) ? 0 : Math.max(0, score);
+        this.finalStatsElement.textContent = `Score: ${Math.floor(validScore).toLocaleString()} pts · Distance: ${Math.floor(validDist)} m · 🍎 ${apples ?? 0} · 🧲 ${horseshoes ?? 0} (Best: ${Math.floor(validHigh).toLocaleString()} pts)`;
+      } else {
+        this.finalStatsElement.textContent = `You covered ${Math.floor(validDist)} meters! (Best: ${Math.floor(validHigh)} pts)`;
+      }
     }
 
     if (this.newRecordBadge) {
@@ -159,6 +255,10 @@ export class HUD {
   }
 
   public dispose(): void {
+    if (this.toastTimeoutId !== null) {
+      window.clearTimeout(this.toastTimeoutId);
+      this.toastTimeoutId = null;
+    }
     if (this.startBtn) {
       this.startBtn.removeEventListener('click', this.onStartClickBound);
     }

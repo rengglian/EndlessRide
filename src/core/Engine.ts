@@ -2,11 +2,21 @@ import * as THREE from 'three';
 import { SplineTrack } from '../track/SplineTrack';
 import { TrackChunkManager } from '../track/TrackChunkManager';
 import { ObstacleManager } from '../obstacles/ObstacleManager';
+import { CollectibleManager } from '../collectibles/CollectibleManager';
 import { HorseRunnerController } from '../entities/horse/HorseRunnerController';
 import { RunnerCamera } from '../camera/RunnerCamera';
 import { InputManager } from '../input/InputManager';
 import { HUD } from '../ui/HUD';
 import { DebugHUD } from '../ui/DebugHUD';
+import {
+  APPLE_BONUS_SCORE,
+  HORSESHOE_BONUS_SCORE,
+  APPLE_MULTIPLIER_STEP,
+  HORSESHOE_MULTIPLIER_STEP,
+  MAX_SCORE_MULTIPLIER,
+  MULTIPLIER_HOLD_DURATION,
+  MULTIPLIER_DECAY_RATE
+} from '../config';
 
 export enum GameState {
   START = 'START',
@@ -26,6 +36,7 @@ export class Engine {
   public spline: SplineTrack;
   public trackManager: TrackChunkManager;
   public obstacleManager: ObstacleManager;
+  public collectibleManager: CollectibleManager;
   public horseController: HorseRunnerController;
   public runnerCamera: RunnerCamera;
   public inputManager: InputManager;
@@ -43,6 +54,13 @@ export class Engine {
   private accumulator = 0;
   private rafId = 0;
   public highScore = 0;
+
+  // Score & Dynamic Multiplier State
+  public score = 0;
+  public multiplier = 1.0;
+  public multiplierTimer = 0;
+  public applesCollected = 0;
+  public horseshoesCollected = 0;
 
   private horsePosTmp = new THREE.Vector3();
   private horseTangentTmp = new THREE.Vector3();
@@ -98,7 +116,13 @@ export class Engine {
     // 5. Initialize Subsystems
     this.spline = new SplineTrack();
     this.obstacleManager = new ObstacleManager(this.scene, this.spline);
-    this.trackManager = new TrackChunkManager(this.scene, this.spline, this.obstacleManager);
+    this.collectibleManager = new CollectibleManager(this.scene, this.spline);
+    this.trackManager = new TrackChunkManager(
+      this.scene,
+      this.spline,
+      this.obstacleManager,
+      this.collectibleManager
+    );
     this.horseController = new HorseRunnerController(this.scene, this.spline);
     this.runnerCamera = new RunnerCamera(this.camera, this.spline);
     this.inputManager = new InputManager();
@@ -259,10 +283,57 @@ export class Engine {
     // 1. Advance horse locomotion and rider kinematics
     this.horseController.update(steer, fixedDt);
 
-    // 2. Stream forward track chunks
+    // 2. Forward distance delta and distance score weighted by multiplier
+    const ds = Math.max(0, this.horseController.distance - this.horseController.prevDistance);
+    this.score += ds * this.multiplier;
+
+    // 3. Stream forward track chunks
     this.trackManager.update(this.horseController.distance);
 
-    // 3. Check obstacle collisions (swept interval [prevDistance, distance])
+    // 4. Update and check collectibles
+    this.collectibleManager.update(fixedDt);
+    this.collectibleManager.checkPlayerCollection(
+      this.horseController.prevDistance,
+      this.horseController.distance,
+      this.horseController.lateralOffset,
+      (type) => {
+        if (type === 'apple') {
+          this.applesCollected++;
+          this.multiplier = Math.min(
+            MAX_SCORE_MULTIPLIER,
+            Math.round((this.multiplier + APPLE_MULTIPLIER_STEP) * 10) / 10
+          );
+          const bonus = Math.round(APPLE_BONUS_SCORE * this.multiplier);
+          this.score += bonus;
+          this.multiplierTimer = MULTIPLIER_HOLD_DURATION;
+          this.hud.triggerPickupFeedback('apple', this.multiplier, bonus);
+        } else {
+          this.horseshoesCollected++;
+          this.multiplier = Math.min(
+            MAX_SCORE_MULTIPLIER,
+            Math.round((this.multiplier + HORSESHOE_MULTIPLIER_STEP) * 10) / 10
+          );
+          const bonus = Math.round(HORSESHOE_BONUS_SCORE * this.multiplier);
+          this.score += bonus;
+          this.multiplierTimer = MULTIPLIER_HOLD_DURATION;
+          this.hud.triggerPickupFeedback('horseshoe', this.multiplier, bonus);
+        }
+      }
+    );
+
+    // 5. Multiplier timer hold & decay
+    if (this.multiplier > 1.0) {
+      if (this.multiplierTimer > 0) {
+        this.multiplierTimer = Math.max(0, this.multiplierTimer - fixedDt);
+      } else {
+        this.multiplier = Math.max(1.0, this.multiplier - MULTIPLIER_DECAY_RATE * fixedDt);
+      }
+    } else {
+      this.multiplier = 1.0;
+      this.multiplierTimer = 0;
+    }
+
+    // 6. Check obstacle collisions (swept interval [prevDistance, distance])
     const collided = this.obstacleManager.checkPlayerCollision(
       this.horseController.prevDistance,
       this.horseController.distance,
@@ -274,15 +345,23 @@ export class Engine {
       return;
     }
 
-    // 4. Update HUD
+    // 7. Update HUD
+    const multiplierProgress =
+      this.multiplier > 1.0 ? this.multiplierTimer / MULTIPLIER_HOLD_DURATION : 0;
     this.hud.update(
       this.horseController.distance,
-      this.horseController.speed
+      this.horseController.speed,
+      this.score,
+      this.multiplier,
+      multiplierProgress,
+      this.applesCollected,
+      this.horseshoesCollected
     );
 
-    // 5. Update high score if beaten
-    if (this.horseController.distance > this.highScore) {
-      this.highScore = this.horseController.distance;
+    // 8. Update high score if beaten (based on max(score, distance))
+    const effectiveScore = Math.max(this.score, this.horseController.distance);
+    if (effectiveScore > this.highScore) {
+      this.highScore = effectiveScore;
       try {
         localStorage.setItem(HIGH_SCORE_KEY, Math.floor(this.highScore).toString());
       } catch {
@@ -307,8 +386,16 @@ export class Engine {
   private gameOver(): void {
     this.state = GameState.GAME_OVER;
     this.horseController.setCrashed(true);
-    const isNewRecord = this.horseController.distance >= this.highScore && this.horseController.distance > 0;
-    this.hud.showGameOver(this.horseController.distance, this.highScore, isNewRecord);
+    const effectiveScore = Math.max(this.score, this.horseController.distance);
+    const isNewRecord = effectiveScore >= this.highScore && effectiveScore > 0;
+    this.hud.showGameOver(
+      this.horseController.distance,
+      this.highScore,
+      isNewRecord,
+      this.score,
+      this.applesCollected,
+      this.horseshoesCollected
+    );
   }
 
   public restart(): void {
@@ -316,7 +403,14 @@ export class Engine {
     this.horseController.reset();
     this.runnerCamera.reset();
     this.obstacleManager.reset();
+    this.collectibleManager.reset();
     this.trackManager.reset();
+    this.score = 0;
+    this.multiplier = 1.0;
+    this.multiplierTimer = 0;
+    this.applesCollected = 0;
+    this.horseshoesCollected = 0;
+    this.hud.update(0, this.horseController.speed, 0, 1.0, 0, 0, 0);
     this.state = GameState.RUNNING;
     this.lastTime = performance.now();
     this.accumulator = 0;
@@ -343,6 +437,7 @@ export class Engine {
     this.inputManager.dispose();
     this.trackManager.dispose();
     this.obstacleManager.dispose();
+    this.collectibleManager.dispose();
     this.horseController.dispose();
     this.renderer.dispose();
   }

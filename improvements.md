@@ -1,7 +1,7 @@
 # Endless Ride – Project Review & Improvement Plan
 
 > Review date: 2026-10-24 · Scope: all tracked source (`src/`, `index.html`, `scripts/`, configs, `.agents/`), build output, and the asset tree.
-> Status: **Core Engine, Track Math, Instanced Scenery, Swept Collision, Fixed-Timestep, UI Flow & Hardware Robustness are COMPLETED (✅)**. Remaining open items (asset compression, ESLint/Vitest CI, audio, collectibles) are tracked as **Future Work (⏳)**.
+> Status: **Core Engine, Track Math, Instanced Scenery, Swept Collision, Collectibles & Score Multiplier, Fixed-Timestep, UI Flow & Hardware Robustness are COMPLETED (✅)**. Remaining open items (asset compression, ESLint/Vitest CI, audio) are tracked as **Future Work (⏳)**.
 > Checks run: `tsc --noEmit` ✅ (no errors), `vite build` ✅ (production bundle built cleanly).
 
 ---
@@ -19,13 +19,12 @@ Endless Ride is a high-performance Three.js + TypeScript endless runner designed
   - **Zero-Allocation Obstacles & Swept Collision**: Pre-allocated shared obstacle geometries in `ObstaclePool.ts`, in-place swap-remove recycling in `ObstacleManager.ts`, static matrix freeze (`matrixAutoUpdate = false`), and swept longitudinal interval AABB collision in $(s, u)$ space.
   - **Deterministic Fixed-Timestep 60Hz Loop**: Decoupled physics simulation from render frame rate in `Engine.ts`, eliminating slow-motion dips below 20 FPS.
   - **Shadow Texel Snapping**: Snapped directional sunlight target to shadow-map texel grid (50m / 1024px ≈ 5cm) to eliminate shadow edge shimmering.
-  - **Complete Game State Flow & Persistence**: Implemented `START` screen with tap/Space to start, `PAUSE` overlay (`Esc` / `P` / blur / visibilitychange), and `localStorage` High Score persistence with "New Record!" banner.
+  - **Complete Game State Flow, Collectibles & Persistence**: Implemented `START` screen with tap/Space to start, `PAUSE` overlay (`Esc` / `P` / blur / visibilitychange), deterministic Apples & Golden Horseshoes collectibles with dynamic score multiplier (`1.0x`–`5.0x`), and `localStorage` High Score persistence with "New Record!" banner.
   - **Hardware Controller Hardening**: Upgraded `m5stack_atoms3_reins.ino` with BMI270 complementary gyro+accel filter, long-press `BtnA` zero-calibration saved to NVS, 4x UDP restart redundancy with sequence numbers, and automatic Wi-Fi reconnect; hardened `sensor_bridge.py` with opt-in simulation (`--simulate`) and WebSocket broadcast.
 - **Open / Future Work (⏳)**:
   - Moving raw art source files (`.blend`, `.fbx`, `.obj`) out of `public/` into an external `art-source/` folder and converting runtime models from base64 `.gltf` to compressed `.glb` + meshopt.
   - Setting up ESLint flat config, Vitest unit tests, and GitHub Actions CI.
   - WebAudio sound effects (gallop cadence, wind, crash feedback).
-  - Collectibles (horseshoes/apples) for lateral lane incentives.
   - Note on Jump Mechanic: Intentionally **Excluded / N/A** because Endless Ride is built for a physical balance-board controller where all obstacles are dodged laterally.
 
 ---
@@ -176,7 +175,7 @@ Endless Ride is a high-performance Three.js + TypeScript endless runner designed
 - **Status**:
   - **Jump Mechanic**: 🚫 **Excluded (N/A)** — Endless Ride is designed specifically for an arcade balance-board / tilt-reins controller where all obstacles are dodged laterally.
   - **Difficulty Curve**: ✅ **Completed** — Obstacle wave spacing dynamically scales down from $26\text{m}$ to $17\text{m}$, and double-obstacle probability scales from $0.35$ up toward $0.68$ as distance increases, while always guaranteeing at least 1 open lane (`trackMath.ts`).
-  - **Collectibles**: ⏳ **Open / Future Work** — Horseshoes/apples for bonus score multiplier.
+  - **Collectibles**: ✅ **Completed** — Added pooled 3D Apples (`+0.2x` multiplier, `+25` base bonus pts) and Golden Horseshoes (`+0.5x` multiplier, `+75` base bonus pts) with deterministic risk/reward wave spawning and mid-segment streaks in [`trackMath.ts`](file:///home/rengglian/repos/EndlessRide/src/track/trackMath.ts), zero-allocation object pooling in [`CollectiblePool.ts`](file:///home/rengglian/repos/EndlessRide/src/collectibles/CollectiblePool.ts), swept collection checks in [`CollectibleManager.ts`](file:///home/rengglian/repos/EndlessRide/src/collectibles/CollectibleManager.ts), and HUD multiplier bar + pickup toast in [`HUD.ts`](file:///home/rengglian/repos/EndlessRide/src/ui/HUD.ts).
 
 ### 6.2 Flow & meta
 - **Status**: ✅ **Completed** (Core Flow) / ⏳ **Open** (Audio)
@@ -271,7 +270,7 @@ Endless Ride is a high-performance Three.js + TypeScript endless runner designed
 | 🟡 P2 | Start screen, Pause overlay (`Esc`/`P`), Gamepad, High Score persistence | 6.2, 6.5 | ✅ **Completed** |
 | 🟡 P2 | WebAudio gallop, wind, and crash sounds | 6.2 | ⏳ Open |
 | 🟢 P3 | Jump mechanic | 6.1 | 🚫 **Excluded (N/A for balance board)** |
-| 🟢 P3 | Collectibles (horseshoes/apples) | 6.1 | ⏳ Open |
+| 🟢 P3 | Collectibles (horseshoes/apples) | 6.1 | ✅ **Completed** |
 | 🟢 P3 | Spring camera damping and visual tilt | 6.3, 6.4 | ✅ **Completed** |
 | 🟢 P3 | Firmware: complementary gyro fusion, calibration, 4x UDP restart, reconnect | 7.1, 7.2 | ✅ **Completed** |
 | 🟢 P3 | Split controller into pure physics/view components | 5.2 | ⏳ Open |

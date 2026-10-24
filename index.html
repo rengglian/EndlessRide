@@ -41,15 +41,16 @@
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      gap: 12px;
+      gap: 10px;
+      flex-wrap: wrap;
     }
     .score-badge {
-      background: rgba(15, 23, 42, 0.75);
+      background: rgba(15, 23, 42, 0.78);
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
       border: 1px solid rgba(255, 255, 255, 0.15);
       color: #fff;
-      padding: 8px 16px;
+      padding: 8px 14px;
       border-radius: 12px;
       display: flex;
       flex-direction: column;
@@ -57,14 +58,14 @@
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
     .score-title {
-      font-size: 11px;
+      font-size: 10.5px;
       text-transform: uppercase;
       letter-spacing: 1px;
       color: #94a3b8;
       font-weight: 600;
     }
     .score-value {
-      font-size: 24px;
+      font-size: 22px;
       font-weight: 800;
       font-family: monospace;
       color: #38bdf8;
@@ -74,6 +75,49 @@
     }
     .speed-value {
       color: #34d399;
+    }
+    .multiplier-container {
+      min-width: 90px;
+    }
+    .multiplier-bar-bg {
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 2px;
+    }
+    #hud-multiplier-bar {
+      width: 0%;
+      height: 100%;
+      background: #f59e0b;
+      transition: width 0.1s linear;
+      border-radius: 2px;
+    }
+    #hud-pickup-toast {
+      position: absolute;
+      top: 110px;
+      left: 50%;
+      transform: translateX(-50%) translateY(0);
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid rgba(250, 204, 21, 0.5);
+      color: #facc15;
+      font-weight: 800;
+      font-size: 15px;
+      padding: 7px 18px;
+      border-radius: 24px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.25s ease, transform 0.25s ease;
+      z-index: 40;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #hud-pickup-toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(-12px) scale(1.06);
     }
     .touch-indicator-container {
       display: flex;
@@ -159,6 +203,27 @@
       margin: 0 auto;
       display: none;
     }
+
+    @media (max-width: 600px) {
+      .hud-top {
+        gap: 6px;
+      }
+      .score-badge {
+        padding: 5px 9px;
+        border-radius: 9px;
+      }
+      .score-title {
+        font-size: 9px;
+      }
+      .score-value {
+        font-size: 15px;
+      }
+      #hud-pickup-toast {
+        top: 130px;
+        font-size: 13px;
+        padding: 5px 14px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -167,18 +232,38 @@
   <div id="hud-overlay">
     <div class="hud-top">
       <div class="score-badge">
-        <span class="score-title">Distance</span>
-        <span id="hud-distance" class="score-value">0 m</span>
+        <span class="score-title">Score</span>
+        <span id="hud-score" class="score-value" style="color: #38bdf8;">0 pts</span>
+      </div>
+      <div class="score-badge multiplier-container">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 6px;">
+          <span class="score-title">Mult</span>
+          <span id="hud-multiplier" class="score-value" style="color: #f59e0b; font-size: 18px;">1.0x</span>
+        </div>
+        <div class="multiplier-bar-bg">
+          <div id="hud-multiplier-bar"></div>
+        </div>
       </div>
       <div class="score-badge">
-        <span class="score-title">High Score</span>
-        <span id="hud-high-score" class="score-value high-score-value">0 m</span>
+        <span class="score-title">Items</span>
+        <span id="hud-collectibles" class="score-value" style="font-size: 15px; color: #f1f5f9;">🍎 0 &nbsp;🧲 0</span>
+      </div>
+      <div class="score-badge">
+        <span class="score-title">Distance</span>
+        <span id="hud-distance" class="score-value" style="font-size: 18px;">0 m</span>
+      </div>
+      <div class="score-badge">
+        <span class="score-title">Best</span>
+        <span id="hud-high-score" class="score-value high-score-value" style="font-size: 18px;">0 pts</span>
       </div>
       <div class="score-badge">
         <span class="score-title">Speed</span>
-        <span id="hud-speed" class="score-value speed-value">18.0 m/s</span>
+        <span id="hud-speed" class="score-value speed-value" style="font-size: 18px;">18.0 m/s</span>
       </div>
     </div>
+
+    <!-- Non-blocking floating pickup feedback indicator -->
+    <div id="hud-pickup-toast"></div>
 
     <div class="touch-indicator-container">
       <div class="touch-zone-hint">&lt; Steer Left</div>
@@ -191,9 +276,9 @@
     <div class="gameover-card">
       <div style="font-size: 13px; font-weight: 800; letter-spacing: 2px; color: #38bdf8; text-transform: uppercase;">ENDLESS RUNNER</div>
       <h1 style="font-size: 26px; font-weight: 800;">Endless Ride</h1>
-      <p style="color: #94a3b8; font-size: 14px;">Gallop through scenic mountain trails. Dodge obstacles laterally across the banked track.</p>
+      <p style="color: #94a3b8; font-size: 14px;">Gallop through scenic mountain trails. Dodge obstacles laterally and grab 🍎 Apples & 🧲 Horseshoes for bonus score and multipliers!</p>
       <button id="start-btn" class="restart-btn" style="background: #10b981;">Start Ride</button>
-      <div style="font-size: 12px; color: #64748b;">Controls: A / D, Left / Right, Touch sides, or Tilt Sensor</div>
+      <div style="font-size: 12px; color: #64748b;">Controls: A / D, Left / Right, Touch screen sides, or Tilt Sensor</div>
     </div>
   </div>
 

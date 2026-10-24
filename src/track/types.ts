@@ -1,10 +1,17 @@
 export type LaneType = 'left' | 'center' | 'right';
 export type ObstacleType = 'rock' | 'log' | 'hurdle' | 'fence';
+export type CollectibleType = 'apple' | 'horseshoe';
 
 export interface ObstacleAnchor {
   distance: number;
   lane: LaneType;
   obstacleType: ObstacleType;
+}
+
+export interface CollectibleAnchor {
+  distance: number;
+  lane: LaneType;
+  collectibleType: CollectibleType;
 }
 
 export interface GenerateTrackChunkRequest {
@@ -26,5 +33,6 @@ export interface GenerateTrackChunkResponse {
   uvs: Float32Array;
   indices: Uint16Array;
   obstacleAnchors: ObstacleAnchor[];
+  collectibleAnchors: CollectibleAnchor[];
   generationId?: number;
 }

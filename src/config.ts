@@ -25,3 +25,12 @@ export const LANE_OFFSETS = {
 } as const;
 
 export const UV_DISTANCE_PERIOD = 1200.0;
+
+/** Collectible Scoring & Dynamic Multiplier Tuning */
+export const APPLE_BONUS_SCORE = 25;
+export const HORSESHOE_BONUS_SCORE = 75;
+export const APPLE_MULTIPLIER_STEP = 0.2;
+export const HORSESHOE_MULTIPLIER_STEP = 0.5;
+export const MAX_SCORE_MULTIPLIER = 5.0;
+export const MULTIPLIER_HOLD_DURATION = 7.0; // seconds before multiplier starts decaying
+export const MULTIPLIER_DECAY_RATE = 0.35; // multiplier decay per second after hold duration expires
