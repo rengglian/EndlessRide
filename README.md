@@ -6,42 +6,52 @@ A high-performance, mobile-optimized 3D endless horse runner game built with **T
 
 ## ✨ Features
 
-- **Procedural Banked Spline Track**:
-  - Smooth infinite countryside trail dynamically computed along an analytical 3D spline curve.
-  - Authentic centrifugal banking roll elevation: $bank = \text{clamp}(sign \cdot \frac{v^2 \cdot \kappa}{g} \cdot 2.0, -0.22, 0.22)$, ensuring natural lean-in on curves for both track geometry, obstacles, horse, and rider.
+- **Procedural Banked Spline Track & Shared Math Engine**:
+  - Smooth infinite countryside trail dynamically computed along an analytical 3D spline curve (`src/track/trackMath.ts`).
+  - Speed-independent geometric banking: $bank = \text{clamp}(sign \cdot \frac{v_{\text{geom}}^2 \cdot \kappa}{g} \cdot 2.0, -0.22, 0.22)$, ensuring natural lean-in on curves for track geometry, obstacles, horse, and rider.
+  - Arc-length speed correction: advances distance by $ds = \frac{speed \cdot dt}{\text{sampleArcLengthFactor}(s)}$ so cadence and speed match ground distance on curves.
+  - Centralized game configuration and tuning rules in `src/config.ts`.
   - Standardized unified coordinate system: $+u$ is Screen-Right ($-X$), $-u$ is Screen-Left ($+X$), and $+Z$ is Forward.
 
 - **Custom GLSL Countryside Paving & Meadow Shader**:
-  - On-GPU procedural limestone cobblestone pavers with staggered running bond mortar grooves.
-  - High-frequency procedural gravel speckle highlights and sandstone curbing trim.
-  - Multi-layer procedural meadow slopes with natural color noise and sunlit wildflower patches.
-  - Zero texture file dependencies: 100% computed inside custom Three.js shader chunks.
+  - Metre-based UV coordinates ($u \in [-36, 36]\text{m}$, $s \in [0, 1200]\text{m}$) eliminating distortion and chunk boundary seams.
+  - On-GPU procedural limestone cobblestone pavers ($0.40\text{m} \times 0.50\text{m}$) with staggered running bond mortar grooves.
+  - Distinct 35cm sandstone curbing trim bordering the 7.6m path ($3.80\text{m} \le |u| \le 4.15\text{m}$).
+  - Multi-layer procedural rolling meadow slopes with natural color noise and sunlit wildflower patches.
+  - Mobile-safe Dave Hoskins `hash12` preventing mediump GPU precision bugs, plus `fwidth` distance attenuation reducing distant mortar/gravel shimmering.
 
 - **Web Worker Multi-Threaded Track Streaming**:
   - Offloads 72m wide terrain cross-sections (flat path, curbs, and rolling meadow hills) to background Web Workers.
-  - Zero-copy memory transfer using transferable `ArrayBuffer` geometry arrays (`Float32Array` positions, normals, UVs, and `Uint32Array` indices).
-  - Synchronous fallback generation for headless environments or unsupported worker setups.
+  - Zero-copy memory transfer using transferable `ArrayBuffer` geometry arrays (`Float32Array` positions, normals, UVs, and `Uint16Array` indices).
+  - Synchronous fallback generation sharing identical math for headless environments or unsupported worker setups.
   - Generation-guarded chunk manager with race condition prevention and mesh leak recycling.
+
+- **Instanced Roadside Scenery & Shared Geometries**:
+  - 4 `THREE.InstancedMesh` instances per chunk (`trunk`, `folBottom`, `folTop`, `bush`), reducing roadside scenery draw calls from 144 to 24 world-wide (4 per chunk).
+  - Pre-allocated shared obstacle geometries (`ObstaclePool.ts`) with static transform freezing (`matrixAutoUpdate = false`).
+  - In-place swap-remove obstacle recycling without per-frame allocations.
+  - Analytical swept longitudinal interval AABB collision in $(s, u)$ space preventing high-speed obstacle tunneling.
+
+- **Deterministic Fixed-Timestep Physics & Lighting**:
+  - 60 Hz physics accumulator (`FIXED_TIMESTEP = 1 / 60`) in `Engine.ts`, decoupling simulation from render frame rate.
+  - Shadow-map texel snapping: sunlight position snaps to the 5cm texel grid to eliminate shadow cascade swimming.
+  - Critically damped spring follow camera with subtle steering roll and speed-scaled field-of-view warp.
 
 - **Articulated Horse & Rider Kinematics**:
   - **Dual Rendering Modes**: Automatically binds high-detail 3D models with embedded animation mixers, with seamless fallback to a 10-node procedural box skeleton.
   - **Gallop Cadence**: Dynamic speed-dependent gallop frequency (4.4 Hz at 65 km/h racing speed).
   - **Dynamic Rider Kinematics**: Real-time pelvis bobbing, speed-based forward wind tuck, and reactive upper-body banking into turns and dodges.
-  - **Rest-Pose Bone Protection**: Skeletal adjustments (shoulders, legs, neck) are anchored to baseline rest rotations, preventing additive angle drift.
+  - Cached skeletal bone lookups, eliminating per-frame string allocations and regex lookups.
 
-- **Object Pooling & Flush Surface Alignment**:
-  - Dedicated zero-garbage object pool for obstacles (hurdles, logs, rocks, and fences) and roadside scenery (evergreen trees, sunlit oaks, and bushes).
-  - In-place `BufferAttribute.set()` updates on recycled track chunks, preventing GC pauses.
-  - Roadside scenery and obstacles sample the banked Frenet-Serret track frame to sit flush on hills without floating or clipping.
-  - Deterministic pseudo-random variation per chunk index for diverse roadside scenery distribution.
+- **Complete Game Flow & Persistence**:
+  - Interactive `START` screen overlay with tap/Space prompt.
+  - Interactive `PAUSE` state (`Esc` / `P` / window blur / visibility change).
+  - LocalStorage High Score persistence with "New Record!" banner on Game Over.
 
-- **Real-Time Telemetry Debug HUD**:
-  - Performance telemetry: FPS, frame time (ms), draw calls, triangle count, and geometry/texture memory.
-  - Kinematics readouts: forward speed ($m/s$ and $km/h$), distance covered, lateral lane position ($u$), track bank angle (°), gallop stride cadence (Hz), and active chunk/obstacle counts.
-
-- **Hardware Motion Controller Support**:
-  - Wired/I2C Raspberry Pi `MPU-6050` accelerometer bridge over WebSockets.
-  - Wireless ESP32-S3 `M5Stack AtomS3` rein motion controller streaming 50 Hz binary UDP packets.
+- **Physical Hardware Motion Controllers**:
+  - Wireless ESP32-S3 `M5Stack AtomS3` rein motion controller streaming 50 Hz binary UDP packets with BMI270 complementary gyro+accel filtering, long-press `BtnA` zero calibration (saved to NVS), and 4x UDP restart packet redundancy.
+  - Opt-in WebSocket gateway (`?sensor=<host-ip>`) with 350ms staleness safety guard.
+  - Native Gamepad API support (Left Stick / D-Pad).
 
 ---
 
@@ -95,14 +105,23 @@ npm run preview
 | :--- | :--- |
 | `A` or `ArrowLeft` | Steer Left (-1.0) |
 | `D` or `ArrowRight` | Steer Right (+1.0) |
-| `Space` | Quick Restart after Game Over |
+| `Space` | Start game / Quick Restart after Game Over |
+| `Esc` or `P` | Pause / Resume Game |
 | `F3` / `H` / `` ` `` | Toggle Engine Telemetry Debug HUD |
 
-### 2. Mobile Touch
+### 2. Gamepad (USB / Bluetooth)
+
+| Control | Action |
+| :--- | :--- |
+| **Left Analog Stick / D-Pad X** | Steer Left / Right |
+| **Button A / Start** | Start / Restart Game |
+| **Button B / Select** | Pause / Resume Game |
+
+### 3. Mobile Touch
 
 - **Tap / Hold Left Half of Screen**: Steer Left (-1.0)
 - **Tap / Hold Right Half of Screen**: Steer Right (+1.0)
-- Touch steering takes priority over keyboard and sensor fallback when active.
+- **Tap Button**: Start game, Pause, or Restart after Game Over (UI button touches are automatically prioritized).
 
 ---
 
@@ -125,18 +144,20 @@ Endless Ride features native support for physical tilt motion controllers, trans
 +--------------------------+
 ```
 
-### Option A: Raspberry Pi I2C Accelerometer Bridge
+### Option A: M5Stack AtomS3 Wireless Rein Controller
+
+The `scripts/m5stack_atoms3_reins/` sketch turns an ultra-compact **M5Stack AtomS3** (ESP32-S3 with built-in Bosch BMI270 IMU and 128x128 color LCD) into wireless horse reins.
+
+- **Complementary Gyro + Accel Filter**: Fuses BMI270 gyroscope and accelerometer data to eliminate linear acceleration spikes when shaking reins.
+- **Zero Neutral Calibration**: Press and hold the front LCD screen button (`BtnA`) for > 1.5 seconds to zero the neutral roll angle. Stored permanently in ESP32 NVS (`Preferences`).
+- **4x UDP Restart Redundancy**: Broadcasts restart button state across 4 consecutive packets with sequence numbering to guarantee restart detection over wireless UDP.
+- **Automatic Wi-Fi Reconnect**: Automatically checks `WiFi.status()` in `loop()` and reconnects if the access point drops.
+- **Captive Portal Wi-Fi Provisioning**: If unconfigured or Wi-Fi fails, creates an access point `AtomS3-Setup` at `192.168.4.1` with a mobile-friendly setup page.
+- **Runtime Target IP Configuration**: Access `http://<atoms3-ip>/` in any browser on the local network to re-point the UDP destination IP without restarting.
+
+### Option B: Raspberry Pi I2C Accelerometer Bridge
 
 The Python bridge (`scripts/sensor_bridge.py`) reads tilt angles from an MPU-6050 6-axis IMU over the Raspberry Pi's I2C bus and broadcasts steering values over a local WebSocket server at `ws://<pi-ip>:8080`.
-
-#### Hardware Wiring (Raspberry Pi GPIO)
-
-| MPU-6050 Pin | Raspberry Pi Pin | Function |
-| :--- | :--- | :--- |
-| **VCC** | Pin 1 | 3.3V Power |
-| **GND** | Pin 6 | Ground |
-| **SDA** | Pin 3 (GPIO 2) | I2C1 Data |
-| **SCL** | Pin 5 (GPIO 3) | I2C1 Clock |
 
 #### Running the Bridge
 
@@ -156,23 +177,13 @@ python3 scripts/sensor_bridge.py --port 8080
 
 #### Connecting in Browser
 
-Point your browser to the game with the `?sensor=<host>` URL query parameter:
+The browser WebSocket connection is **strictly opt-in**. Point your browser to the game with the `?sensor=<host>` URL query parameter:
 
 ```
 http://localhost:3000/?sensor=192.168.1.50
 ```
 
----
-
-### Option B: M5Stack AtomS3 Wireless Rein Controller
-
-The `scripts/m5stack_atoms3_reins/` sketch turns an ultra-compact **M5Stack AtomS3** (ESP32-S3 with built-in Bosch BMI270 IMU and 128x128 color LCD) into wireless horse reins.
-
-- **Binary UDP Protocol**: Transmits an 8-byte binary datagram at 50 Hz (`0x4552` magic identifier, sequence number, button restart flag, IEEE 754 float steer).
-- **Onboard 128x128 LCD Dashboard**: Shows dynamic horizontal steering bar, target destination IP, local IP, and Wi-Fi status.
-- **Captive Portal Wi-Fi Provisioning**: If unconfigured or Wi-Fi fails, creates an access point `AtomS3-Setup` at `192.168.4.1` with a mobile-friendly setup page.
-- **Runtime Target IP Configuration**: Access `http://<atoms3-ip>/` in any browser on the local network to re-point the UDP destination IP without restarting.
-- **Factory Reset**: Hold down the front LCD screen button (`BtnA`) during power-on to clear stored NVS credentials.
+A built-in **350ms staleness timeout** ensures steering automatically resets to 0.0 if packets stop arriving.
 
 ---
 
@@ -205,6 +216,7 @@ EndlessRide/
 ├── package.json                 # Project dependencies & build scripts
 ├── tsconfig.json                # Strict TypeScript configuration
 ├── vite.config.ts               # Vite configuration with ES module worker support
+├── improvements.md              # Project review, implemented fixes, and roadmap
 ├── public/
 │   └── assets/                  # glTF/GLB 3D character and animal models
 ├── scripts/
@@ -212,11 +224,12 @@ EndlessRide/
 │   └── m5stack_atoms3_reins/    # Arduino firmware for wireless M5Stack AtomS3 controller
 │       └── m5stack_atoms3_reins.ino
 └── src/
+    ├── config.ts                # Centralized game tuning & track dimensions
     ├── main.ts                  # Application bootstrap & lifecycle startup
     ├── camera/
-    │   └── RunnerCamera.ts      # 3rd-person follow camera with speed FOV warp
+    │   └── RunnerCamera.ts      # Spring-damped 3rd-person follow camera with FOV warp
     ├── core/
-    │   └── Engine.ts            # Main game loop, scene setup, lighting, and restart orchestration
+    │   └── Engine.ts            # Fixed-timestep loop, game states (Start/Pause/GameOver), lighting
     ├── entities/
     │   ├── horse/
     │   │   ├── HorseMesh.ts     # Procedural horse geometry & analytical gallop rig
@@ -224,33 +237,35 @@ EndlessRide/
     │   └── rider/
     │       └── GirlRiderEntity.ts # Girl rider entity, saddle attachment, kinematic lean/bob
     ├── input/
-    │   └── InputManager.ts      # Keyboard, touch, and WebSocket IMU sensor input handler
+    │   └── InputManager.ts      # Keyboard, multi-touch, Gamepad, and opt-in sensor handler
     ├── loaders/
     │   └── AssetLoader.ts       # glTF loader with animation mixer extraction
     ├── obstacles/
-    │   ├── ObstacleManager.ts   # Chunk obstacle spawning, banked orientation, cylinder collision
-    │   ├── ObstaclePool.ts      # Multi-type obstacle mesh pooling
-    │   └── types.ts             # Obstacle type interfaces
+    │   ├── ObstacleManager.ts   # Chunk obstacle spawning, matrix freeze, swept AABB collision
+    │   ├── ObstaclePool.ts      # Shared obstacle geometry & material pooling
+    │   └── types.ts             # Obstacle entity extents & interfaces
     ├── track/
-    │   ├── SplineTrack.ts       # Analytical track spline, tangent/normal evaluation, banking math
-    │   ├── TrackChunk.ts        # Individual track chunk mesh, in-place buffer updates, scenery pooling
-    │   ├── TrackChunkManager.ts # Linear streaming window, Web Worker orchestration, pool manager
+    │   ├── SplineTrack.ts       # Analytical track spline facade delegating to trackMath
+    │   ├── TrackChunk.ts        # Individual track chunk mesh, instanced scenery, buffer updates
+    │   ├── TrackChunkManager.ts # Linear streaming window, Web Worker orchestration, custom shader
+    │   ├── trackMath.ts         # Pure closed-form spline math, cross-section slope normals, seeded PRNG
     │   ├── types.ts             # Track geometry & worker message types
     │   └── workers/
     │       └── track.worker.ts  # Web Worker multi-threaded chunk vertex generator
     └── ui/
         ├── DebugHUD.ts          # Telemetry overlay (FPS, draw calls, speed, bank, memory)
-        └── HUD.ts               # Clean gameplay HUD (distance, speed, gameover screen)
+        └── HUD.ts               # Gameplay HUD (distance, speed, Start/Pause overlays, High Score)
 ```
 
 ---
 
 ## 🛠️ Performance & Tuning
 
-- **Target Framerate**: 60 FPS locked on mobile devices and Raspberry Pi 4.
+- **Target Framerate**: 60 FPS locked on mobile devices and Raspberry Pi 4 via fixed-timestep simulation.
+- **Draw Call Budget**: Capped under 40 draw calls per frame via 4 `THREE.InstancedMesh` scenery calls per chunk and shared obstacle geometries.
 - **Pixel Ratio**: Clamped to a max of `1.5` to prevent GPU fill-rate exhaustion on high-DPI retina screens.
-- **Zero In-Loop Allocations**: Reusable vectors (`_pos`, `_tangent`, `_normal`, `_bankQuat`, `_camPos`, `_lookTarget`) are recycled across frames to eliminate garbage collection pauses.
-- **Shadow Map**: PCFSoft shadows with directional sunlight target dynamically tethered to horse position for crisp, local shadow cascades.
+- **Zero In-Loop Allocations**: Reusable vectors, in-place swap-remove obstacle recycling, and cached skeletal bone references eliminate garbage collection pauses.
+- **Shadow Map**: PCFSoft shadows with directional sunlight target snapped to the 5cm shadow-map texel grid for swimming-free local cascades.
 
 ---
 
