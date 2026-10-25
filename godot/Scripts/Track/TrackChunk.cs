@@ -22,26 +22,34 @@ public partial class TrackChunk : Node3D
     private CollisionShape3D _collisionShape = null!;
 
     // MultiMesh scenery instances
-    private MultiMeshInstance3D _trunkInstance = null!;
-    private MultiMeshInstance3D _folBottomInstance = null!;
-    private MultiMeshInstance3D _folTopInstance = null!;
+    private MultiMeshInstance3D _pineInstance = null!;
+    private MultiMeshInstance3D _oakInstance = null!;
+    private MultiMeshInstance3D _birchInstance = null!;
     private MultiMeshInstance3D _bushInstance = null!;
 
     private static Material? s_trackMaterial;
-    private static StandardMaterial3D? s_trunkMaterial;
-    private static StandardMaterial3D? s_folBottomMaterial;
-    private static StandardMaterial3D? s_folTopMaterial;
-    private static StandardMaterial3D? s_bushMaterial;
-
-    private static CylinderMesh? s_trunkMesh;
-    private static CylinderMesh? s_folBottomMesh;
-    private static CylinderMesh? s_folTopMesh;
-    private static SphereMesh? s_bushMesh;
+    private static Mesh? s_pineMesh;
+    private static Mesh? s_oakMesh;
+    private static Mesh? s_birchMesh;
+    private static Mesh? s_bushMesh;
 
     public override void _Ready()
     {
         EnsureSharedResources();
         BuildNodeHierarchy();
+    }
+
+    private static Mesh? LoadMeshFromGltf(string resPath)
+    {
+        if (!ResourceLoader.Exists(resPath)) return null;
+        var scene = GD.Load<PackedScene>(resPath);
+        if (scene == null) return null;
+        var inst = scene.Instantiate<Node3D>();
+        if (inst == null) return null;
+
+        MeshInstance3D? meshInst = inst as MeshInstance3D;
+        meshInst ??= inst.FindChild("*", true, false) as MeshInstance3D;
+        return meshInst?.Mesh;
     }
 
     private static void EnsureSharedResources()
@@ -52,68 +60,17 @@ public partial class TrackChunk : Node3D
         var mat = new ShaderMaterial { Shader = shader };
         s_trackMaterial = mat;
 
-        s_trunkMaterial = new StandardMaterial3D
-        {
-            AlbedoColor = new Color(0.29f, 0.18f, 0.09f),
-            Roughness = 0.9f,
-            Metallic = 0.05f
-        };
+        // Load stylized high-quality low-poly models generated in Blender
+        s_pineMesh = LoadMeshFromGltf("res://Assets/Models/TreePine.glb");
+        s_oakMesh = LoadMeshFromGltf("res://Assets/Models/TreeOak.glb");
+        s_birchMesh = LoadMeshFromGltf("res://Assets/Models/TreeBirch.glb");
+        s_bushMesh = LoadMeshFromGltf("res://Assets/Models/BushMeadow.glb");
 
-        s_folBottomMaterial = new StandardMaterial3D
-        {
-            AlbedoColor = new Color(0.13f, 0.41f, 0.16f), // Lush evergreen / oak
-            Roughness = 0.8f,
-            ShadingMode = BaseMaterial3D.ShadingModeEnum.PerPixel
-        };
-
-        s_folTopMaterial = new StandardMaterial3D
-        {
-            AlbedoColor = new Color(0.22f, 0.51f, 0.21f), // Sunlit meadow green
-            Roughness = 0.8f
-        };
-
-        s_bushMaterial = new StandardMaterial3D
-        {
-            AlbedoColor = new Color(0.18f, 0.46f, 0.20f),
-            Roughness = 0.85f
-        };
-
-        // Scenery meshes
-        s_trunkMesh = new CylinderMesh
-        {
-            TopRadius = 0.22f,
-            BottomRadius = 0.42f,
-            Height = 2.6f,
-            RadialSegments = 6,
-            Material = s_trunkMaterial
-        };
-
-        s_folBottomMesh = new CylinderMesh
-        {
-            TopRadius = 0.0f,
-            BottomRadius = 1.7f,
-            Height = 2.4f,
-            RadialSegments = 6,
-            Material = s_folBottomMaterial
-        };
-
-        s_folTopMesh = new CylinderMesh
-        {
-            TopRadius = 0.0f,
-            BottomRadius = 1.25f,
-            Height = 1.9f,
-            RadialSegments = 6,
-            Material = s_folTopMaterial
-        };
-
-        s_bushMesh = new SphereMesh
-        {
-            Radius = 0.9f,
-            Height = 1.8f,
-            RadialSegments = 6,
-            Rings = 4,
-            Material = s_bushMaterial
-        };
+        // Fallback procedural primitives if models missing
+        s_pineMesh ??= new CylinderMesh { TopRadius = 0.0f, BottomRadius = 1.6f, Height = 4.5f };
+        s_oakMesh ??= new SphereMesh { Radius = 1.6f, Height = 3.2f };
+        s_birchMesh ??= new CylinderMesh { TopRadius = 0.8f, BottomRadius = 0.8f, Height = 4.8f };
+        s_bushMesh ??= new SphereMesh { Radius = 0.9f, Height = 1.8f };
     }
 
     private void BuildNodeHierarchy()
@@ -130,14 +87,14 @@ public partial class TrackChunk : Node3D
         _staticBody.AddChild(_collisionShape);
         AddChild(_staticBody);
 
-        _trunkInstance = CreateMultiMeshInstance(s_trunkMesh!);
-        _folBottomInstance = CreateMultiMeshInstance(s_folBottomMesh!);
-        _folTopInstance = CreateMultiMeshInstance(s_folTopMesh!);
+        _pineInstance = CreateMultiMeshInstance(s_pineMesh!);
+        _oakInstance = CreateMultiMeshInstance(s_oakMesh!);
+        _birchInstance = CreateMultiMeshInstance(s_birchMesh!);
         _bushInstance = CreateMultiMeshInstance(s_bushMesh!);
 
-        AddChild(_trunkInstance);
-        AddChild(_folBottomInstance);
-        AddChild(_folTopInstance);
+        AddChild(_pineInstance);
+        AddChild(_oakInstance);
+        AddChild(_birchInstance);
         AddChild(_bushInstance);
     }
 
@@ -222,43 +179,51 @@ public partial class TrackChunk : Node3D
             float groundH = TrackMath.GetGroundHeightAtOffset(uOffset);
 
             var frame = spline.GetBankedFrameAt(s, Config.GeometricBankSpeed);
-            Vector3 treePos = frame.Point + frame.Lateral * uOffset + frame.Up * groundH;
+            Vector3 sceneryPos = frame.Point + frame.Lateral * uOffset + frame.Up * groundH;
 
             // Align base orientation with terrain surface Up + random yaw
             Basis yawBasis = new Basis(frame.Up, randYaw);
             Basis alignBasis = new Basis(frame.Lateral, frame.Up, frame.Tangent) * yawBasis;
 
-            bool isBush = (i + ChunkIndex) % 3 == 0;
+            // Deterministic scenery variant selection:
+            // 0: Bush (~25%), 1: Pine (~25%), 2: Oak (~25%), 3: Birch (~25%)
+            int variant = Math.Abs((ChunkIndex * 31) ^ (i * 17)) % 4;
 
-            if (isBush)
+            _pineInstance.Multimesh.SetInstanceTransform(i, zeroTransform);
+            _oakInstance.Multimesh.SetInstanceTransform(i, zeroTransform);
+            _birchInstance.Multimesh.SetInstanceTransform(i, zeroTransform);
+            _bushInstance.Multimesh.SetInstanceTransform(i, zeroTransform);
+
+            switch (variant)
             {
-                _trunkInstance.Multimesh.SetInstanceTransform(i, zeroTransform);
-                _folBottomInstance.Multimesh.SetInstanceTransform(i, zeroTransform);
-                _folTopInstance.Multimesh.SetInstanceTransform(i, zeroTransform);
-
-                float bScale = 0.95f + rand2 * 0.45f;
-                Vector3 bushPos = treePos + frame.Up * 0.32f;
-                Basis bushBasis = alignBasis.Scaled(new Vector3(bScale * 1.2f, bScale * 0.85f, bScale * 1.2f));
-                _bushInstance.Multimesh.SetInstanceTransform(i, new Transform3D(bushBasis, bushPos));
-            }
-            else
-            {
-                _bushInstance.Multimesh.SetInstanceTransform(i, zeroTransform);
-
-                float tScale = 0.85f + rand1 * 0.45f;
-                Basis treeBasis = alignBasis.Scaled(new Vector3(tScale, tScale, tScale));
-
-                // Trunk
-                Vector3 trunkPos = treePos + frame.Up * (1.0f * tScale);
-                _trunkInstance.Multimesh.SetInstanceTransform(i, new Transform3D(treeBasis, trunkPos));
-
-                // Foliage lower tier
-                Vector3 folBottomPos = treePos + frame.Up * (2.6f * tScale);
-                _folBottomInstance.Multimesh.SetInstanceTransform(i, new Transform3D(treeBasis, folBottomPos));
-
-                // Foliage top tier
-                Vector3 folTopPos = treePos + frame.Up * (4.2f * tScale);
-                _folTopInstance.Multimesh.SetInstanceTransform(i, new Transform3D(treeBasis, folTopPos));
+                case 0: // Flowering Bush
+                {
+                    float bScale = 0.85f + rand2 * 0.35f;
+                    Basis bushBasis = alignBasis.Scaled(new Vector3(bScale * 1.15f, bScale * 0.90f, bScale * 1.15f));
+                    _bushInstance.Multimesh.SetInstanceTransform(i, new Transform3D(bushBasis, sceneryPos));
+                    break;
+                }
+                case 1: // Tall Nordic Pine
+                {
+                    float pScale = 0.80f + rand1 * 0.40f;
+                    Basis pineBasis = alignBasis.Scaled(new Vector3(pScale, pScale, pScale));
+                    _pineInstance.Multimesh.SetInstanceTransform(i, new Transform3D(pineBasis, sceneryPos));
+                    break;
+                }
+                case 2: // Broadleaf Oak
+                {
+                    float oScale = 0.75f + rand2 * 0.35f;
+                    Basis oakBasis = alignBasis.Scaled(new Vector3(oScale, oScale, oScale));
+                    _oakInstance.Multimesh.SetInstanceTransform(i, new Transform3D(oakBasis, sceneryPos));
+                    break;
+                }
+                case 3: // Slender Birch
+                {
+                    float bScale = 0.82f + rand1 * 0.38f;
+                    Basis birchBasis = alignBasis.Scaled(new Vector3(bScale, bScale, bScale));
+                    _birchInstance.Multimesh.SetInstanceTransform(i, new Transform3D(birchBasis, sceneryPos));
+                    break;
+                }
             }
         }
     }

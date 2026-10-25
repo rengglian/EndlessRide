@@ -40,29 +40,29 @@ void fragment() {
     float gravelVar = (gravelNoise - 0.5) * 0.08 * detailAtten;
     mortarMask *= detailAtten;
 
-    // Bright sunny limestone & warm cobblestone pavers
-    vec3 lightPaverBase = vec3(0.97, 0.92, 0.84);   // Warm golden limestone / sunlit cobble
-    vec3 mortarColor    = vec3(0.68, 0.62, 0.55);   // Crisp warm mortar groove
-    vec3 gravelColor    = vec3(0.98, 0.95, 0.89);   // Warm gravel highlights
+    // 1. Natural warm European cobblestone pavers & gravel
+    vec3 lightPaverBase = vec3(0.82, 0.78, 0.70);   // Warm bright limestone cobblestone
+    vec3 mortarColor    = vec3(0.46, 0.42, 0.36);   // Crisp dark recessed mortar grooves
+    vec3 gravelColor    = vec3(0.78, 0.74, 0.66);   // Natural crushed gravel speckles
 
     vec3 paverColor = mix(lightPaverBase + stoneVar + gravelVar, gravelColor, 0.25);
-    paverColor = mix(paverColor, mortarColor, mortarMask * 0.75);
+    paverColor = mix(paverColor, mortarColor, mortarMask * 0.80);
 
     // 2. Sandstone Curb / Border Trim (35cm wide between 3.8m and 4.15m)
-    vec3 curbColor = vec3(0.85, 0.78, 0.68);
+    vec3 curbColor = vec3(0.66, 0.60, 0.52);
 
     // 3. Lush Rolling Meadow & Wildflowers in Metres
     vec2 meadowUv = vec2(u * 0.25, s * 0.25);
     float meadowNoise = sin(meadowUv.x * 2.4 + meadowUv.y * 3.6) * cos(meadowUv.x * 3.2 - meadowUv.y * 2.0);
-    vec3 grassBase   = vec3(0.24, 0.58, 0.22); // Vibrant rich green
-    vec3 grassSunlit = vec3(0.36, 0.72, 0.26); // Sunlit golden meadow
+    vec3 grassBase   = vec3(0.24, 0.54, 0.22); // Vibrant rich emerald meadow
+    vec3 grassSunlit = vec3(0.36, 0.68, 0.28); // Sunlit warm meadow green
     vec3 meadowColor = mix(grassBase, grassSunlit, meadowNoise * 0.5 + 0.5);
 
     // Wildflower spots on meadows
     vec2 flowerTile = floor(meadowUv * 1.5);
     float flowerHash = hash12(flowerTile);
     if (flowerHash > 0.93) {
-        vec3 flowerColor = flowerHash > 0.965 ? vec3(0.98, 0.90, 0.25) : vec3(0.94, 0.35, 0.35);
+        vec3 flowerColor = flowerHash > 0.965 ? vec3(0.98, 0.88, 0.25) : vec3(0.92, 0.32, 0.32);
         float flowerDist = length(fract(meadowUv * 1.5) - 0.5);
         if (flowerDist < 0.28) {
             meadowColor = mix(meadowColor, flowerColor, 0.85);
@@ -79,6 +79,6 @@ void fragment() {
     col = mix(col, paverColor, pathMask);
 
     ALBEDO = col;
-    ROUGHNESS = 0.65;
-    METALLIC = 0.05;
+    ROUGHNESS = 0.75;
+    METALLIC = 0.02;
 }
