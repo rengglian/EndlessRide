@@ -12,7 +12,7 @@ config_version=5
 
 config/name="EndlessRide"
 run/main_scene="res://Scenes/Main.tscn"
-config/features=PackedStringArray("4.7", "C#", "GL Compatibility")
+config/features=PackedStringArray("4.8", "C#", "GL Compatibility")
 config/icon="res://icon.svg"
 
 [display]

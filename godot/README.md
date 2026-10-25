@@ -19,7 +19,7 @@ The Godot engine runs as the standalone central console hub, handling rendering,
 │                        NVIDIA SHIELD TV / LINUX DESKTOP                                │
 │                                                                                        │
 │  ┌──────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                            Godot 4.7 (.NET 10 / C#)                              │  │
+│  │                            Godot 4.8 (.NET 10 / C#)                              │  │
 │  │                                                                                  │  │
 │  │  ┌───────────────────────┐  ┌───────────────────────┐  ┌──────────────────────┐  │  │
 │  │  │  Hardware UDP Listener│  │ Embedded Web Server   │  │  Save State / Config │  │  │
@@ -212,7 +212,7 @@ godot/
 dotnet build godot/EndlessRide.sln
 
 # 2. Export Linux package (path is relative to the --path godot project root)
-/opt/godot/Godot_v4.7.2-stable_mono_linux.x86_64 --headless --path godot --export-pack "Linux Desktop (x86_64)" builds/linux/EndlessRide.pck
+/opt/godot/Godot_v4.8-beta1_mono_linux_x86_64/Godot_v4.8-beta1_mono_linux.x86_64 --headless --path godot --export-pack "Linux Desktop (x86_64)" builds/linux/EndlessRide.pck
 
 # 3. Launch the game
 ./godot/builds/linux/EndlessRide.x86_64
@@ -224,7 +224,7 @@ dotnet build godot/EndlessRide.sln
 adb connect <SHIELD_TV_IP>:5555
 
 # 2. Build Android APK
-/opt/godot/Godot_v4.7.2-stable_mono_linux.x86_64 --headless --path godot --export-release "Android TV (NVIDIA Shield)" builds/android/EndlessRide.apk
+/opt/godot/Godot_v4.8-beta1_mono_linux_x86_64/Godot_v4.8-beta1_mono_linux.x86_64 --headless --path godot --export-release "Android TV (NVIDIA Shield)" builds/android/EndlessRide.apk
 
 # 3. Install & launch
 adb install -r godot/builds/android/EndlessRide.apk

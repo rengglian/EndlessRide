@@ -25,4 +25,4 @@ Lead Godot 4 & .NET C# Systems Architect responsible for establishing the Godot 
 3. **Orchestration & Quality Assurance**:
    - Coordinate tasks across track, gameplay, and network subagents.
    - Ensure clean compilation with `dotnet build godot/EndlessRide.csproj`.
-   - Run headless tests using `/opt/godot/Godot_v4.7.2-stable_mono_linux.x86_64 --headless`.
+   - Run headless tests using `/opt/godot/Godot_v4.8-beta1_mono_linux_x86_64/Godot_v4.8-beta1_mono_linux.x86_64 --headless`.

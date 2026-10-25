@@ -5,7 +5,7 @@
 ---
 
 ## Tooling & Environment Verification
-- **Godot Engine**: Godot Mono / .NET edition v4.7.2 located at `/opt/godot/Godot_v4.7.2-stable_mono_linux.x86_64`.
+- **Godot Engine**: Godot Mono / .NET edition v4.8-beta1 located at `/opt/godot/Godot_v4.8-beta1_mono_linux_x86_64/Godot_v4.8-beta1_mono_linux.x86_64`.
 - **.NET SDK**: .NET 10 SDK (`dotnet-sdk-10.0`, version `10.0.113`) at `/usr/lib/dotnet/dotnet`.
 - **Android SDK**: Located at `/home/rengglian/Android/Sdk`.
 - **Java**: OpenJDK 21 / 25 at `/usr/lib/jvm/`.

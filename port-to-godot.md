@@ -21,7 +21,7 @@ The port eliminates the Raspberry Pi and the external Python bridge (`sensor_bri
 │                        NVIDIA SHIELD TV (Android TV / Tegra X1)                        │
 │                                                                                        │
 │  ┌──────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                             Godot 4.7 (.NET 10 / C#)                             │  │
+│  │                             Godot 4.8 (.NET 10 / C#)                             │  │
 │  │                                                                                  │  │
 │  │  ┌───────────────────────┐  ┌───────────────────────┐  ┌──────────────────────┐  │  │
 │  │  │  Hardware UDP Listener│  │ Embedded Web Server   │  │  Save State Manager  │  │  │
@@ -55,7 +55,7 @@ The port eliminates the Raspberry Pi and the external Python bridge (`sensor_bri
 
 ### 2.1 Linux Development Machine
 1. **.NET SDK**: Install .NET 10 SDK (`dotnet-sdk-10.0`).
-2. **Godot Engine**: Download **Godot 4.7+ .NET Edition** (x86_64 Linux).
+2. **Godot Engine**: Download **Godot 4.8+ .NET Edition** (x86_64 Linux).
 3. **Android Workload for .NET**:
    ```bash
    dotnet workload install android
@@ -164,7 +164,7 @@ flowchart TD
 ```
 
 ### Phase 1: Engine Initialization & Dual-Target Presets (Day 1–2)
-1. Initialize Godot 4.7+ project with **C# (.NET 10)**.
+1. Initialize Godot 4.8+ project with **C# (.NET 10)**.
 2. Configure **Project Settings**:
    - `rendering/renderer/rendering_method`: Set to **`gl_compatibility`** (for rock-solid performance on Shield Tegra X1) or **`mobile`** (Vulkan Mobile).
    - `input_devices/pointing/emulate_touch_from_mouse`: `true` (enables mouse testing of touch drag).
