@@ -80,7 +80,7 @@ public partial class RunnerCamera : Camera3D
 
         if (MathF.Abs(_currentRoll) > 0.0001f)
         {
-            RotateZ(_currentRoll);
+            RotateObjectLocal(Vector3.Back, _currentRoll);
         }
     }
 

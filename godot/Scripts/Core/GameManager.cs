@@ -59,6 +59,9 @@ public partial class GameManager : Node3D
     private readonly LeaderboardManager _leaderboardManager = new();
 
     private float _telemetryTimer;
+    private float _gameOverLockoutTimer;
+    private bool _prevSpacePressed;
+    private bool _prevMousePressed;
 
     public override void _Ready()
     {
@@ -118,12 +121,20 @@ public partial class GameManager : Node3D
 
         WebServer.OnPauseCommand += () => Callable.From(() =>
         {
-            if (State == GameState.Running) State = GameState.Paused;
+            if (State == GameState.Running)
+            {
+                State = GameState.Paused;
+                WebServer?.BroadcastRoomState("PAUSED", Difficulty.ToString().ToLowerInvariant(), PlayerName, _leaderboardManager.Entries);
+            }
         }).CallDeferred();
 
         WebServer.OnResumeCommand += () => Callable.From(() =>
         {
-            if (State == GameState.Paused) State = GameState.Running;
+            if (State == GameState.Paused)
+            {
+                State = GameState.Running;
+                WebServer?.BroadcastRoomState("RUNNING", Difficulty.ToString().ToLowerInvariant(), PlayerName, _leaderboardManager.Entries);
+            }
         }).CallDeferred();
 
         WebServer.OnTareCommand += () => Callable.From(() =>
@@ -170,11 +181,17 @@ public partial class GameManager : Node3D
         float dt = (float)delta;
         float steer = SampleSteerInput();
 
+        bool spaceJustPressed = Input.IsKeyPressed(Key.Space) && !_prevSpacePressed;
+        bool mouseJustPressed = Input.IsMouseButtonPressed(MouseButton.Left) && !_prevMousePressed;
+        bool startOrRestartPressed = Input.IsActionJustPressed("ui_accept") || spaceJustPressed || mouseJustPressed;
+        _prevSpacePressed = Input.IsKeyPressed(Key.Space);
+        _prevMousePressed = Input.IsMouseButtonPressed(MouseButton.Left);
+
         switch (State)
         {
             case GameState.Start:
                 UpdateCameraOnly(steer, dt);
-                if (Input.IsActionJustPressed("ui_accept") || Input.IsKeyPressed(Key.Space) || Input.IsMouseButtonPressed(MouseButton.Left))
+                if (startOrRestartPressed)
                 {
                     StartGame();
                 }
@@ -197,15 +214,15 @@ public partial class GameManager : Node3D
                 break;
 
             case GameState.Paused:
-                if (Input.IsActionJustPressed("ui_cancel") || Input.IsKeyPressed(Key.P))
-                {
-                    State = GameState.Running;
-                }
                 break;
 
             case GameState.GameOver:
                 UpdateCameraOnly(0.0f, dt);
-                if (Input.IsActionJustPressed("ui_accept") || Input.IsKeyPressed(Key.Space) || Input.IsMouseButtonPressed(MouseButton.Left))
+                if (_gameOverLockoutTimer > 0.0f)
+                {
+                    _gameOverLockoutTimer -= dt;
+                }
+                else if (startOrRestartPressed)
                 {
                     StartGame();
                 }
@@ -229,7 +246,7 @@ public partial class GameManager : Node3D
         _telemetryTimer += dt;
         if (_telemetryTimer >= 0.05f)
         {
-            _telemetryTimer = 0.0f;
+            _telemetryTimer -= 0.05f;
             var udp = UdpReceiver;
             bool isHw = udp != null && udp.IsActive;
             string source = isHw ? "atoms3" : "godot";
@@ -414,6 +431,7 @@ public partial class GameManager : Node3D
     {
         if (State == GameState.GameOver) return;
         State = GameState.GameOver;
+        _gameOverLockoutTimer = 0.6f;
         HorseController.SetCrashed(true);
 
         int finalScore = (int)MathF.Max(Score, DistanceTraveled);

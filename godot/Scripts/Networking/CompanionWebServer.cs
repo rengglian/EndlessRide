@@ -310,8 +310,11 @@ public partial class CompanionWebServer : Node
                 case "select_player":
                     if (root.TryGetProperty("playerName", out var nameProp))
                     {
-                        string name = nameProp.GetString() ?? "Rider 1";
-                        _lastPlayerName = name;
+                        string rawName = nameProp.GetString() ?? "Rider 1";
+                        string cleanName = string.Join("", rawName.Where(c => !char.IsControl(c))).Trim();
+                        if (cleanName.Length > 20) cleanName = cleanName[..20];
+                        if (string.IsNullOrWhiteSpace(cleanName)) cleanName = "Rider 1";
+                        _lastPlayerName = cleanName;
                         OnPlayerNameChanged?.Invoke(_lastPlayerName);
                     }
                     break;

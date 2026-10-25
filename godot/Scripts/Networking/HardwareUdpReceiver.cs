@@ -26,7 +26,7 @@ public partial class HardwareUdpReceiver : Node
     public float CalibratedSteer { get; private set; }
     public float CalOffset { get; set; } = 0.0f;
     public bool IsRestartPressed { get; private set; }
-    public bool IsActive => (Time.GetTicksMsec() - _lastPacketTimeMs) < 1000;
+    public bool IsActive => _lastPacketTimeMs > 0 && (Time.GetTicksMsec() - _lastPacketTimeMs) < 350;
     public int PacketCount { get; private set; }
     public string DeviceIp { get; private set; } = string.Empty;
     public byte Seq { get; private set; }
@@ -118,7 +118,8 @@ public partial class HardwareUdpReceiver : Node
 
         byte seq = data[2];
         byte restart = data[3];
-        float steer = BitConverter.ToSingle(data, 4);
+        float steer = BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(4, 4));
+        if (!float.IsFinite(steer)) return;
         if (InvertX)
         {
             steer = -steer;
