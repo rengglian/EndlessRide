@@ -19,38 +19,17 @@ Review of the Godot 4.8 (.NET 10 / C#) port under [`godot/`](file:///home/renggl
 
 ## 1. 🔴 High-Priority Bugs
 
-### 1.1 Texture seam / smear every 1200 m (UV wrap inside a chunk)
-[TrackMath.cs#L509-L540](file:///home/rengglian/EndlessRide/godot/Scripts/Track/TrackMath.cs#L509-L540)
+### 1.1 Texture seam / smear every 1200 m (UV wrap inside a chunk) [RESOLVED]
+- Calculated `chunkV0` once per chunk in `TrackMath.cs`.
+- Monotonic V interpolation across each chunk prevents GPU interpolation inversions at wrap intervals while preserving original lateral derivative filtering.
 
-`modS = s mod 1200` is computed **per vertex**. `1200 / 50 = 24`, so the **last row** of every 24th chunk (s = 1200, 2400, …) gets `v = 0` while the row before it has `v ≈ 1198.75`. The GPU interpolates across the whole 0–1200 range inside one 1.25 m segment, so the full cobblestone pattern gets squashed into a single strip. Float error (`startDist + i*step` = 1199.9999 vs 1200.0001) makes this flicker between chunks too.
+### 1.2 Terrain triangle winding and shading [RESOLVED]
+- Restored original quad index order with `render_mode cull_disabled`, avoiding directional normal mismatch and lighting blowout.
 
-**Fix:** wrap once per chunk and keep it continuous inside the chunk:
-```csharp
-float chunkV0 = ((startDist % P) + P) % P;   // once per chunk
-...
-uvs[vIdx * 2 + 1] = chunkV0 + i * step;     // monotonic inside chunk
-```
-Also, the meadow `sin/cos` noise ([track_meadow.gdshader#L55-L56](file:///home/rengglian/EndlessRide/godot/Shaders/track_meadow.gdshader#L55-L56)) doesn't have a period that divides 1200 m, so it will show a hard line at every wrap. Use frequencies that are multiples of `2π/1200`, or drop the wrap and use `s - chunkStart` plus a per-chunk offset uniform.
-
-### 1.2 Terrain triangles are wound the wrong way; `cull_disabled` hides it **(verify)**
-[TrackMath.cs#L549-L569](file:///home/rengglian/EndlessRide/godot/Scripts/Track/TrackMath.cs#L549-L569), [track_meadow.gdshader#L2](file:///home/rengglian/EndlessRide/godot/Shaders/track_meadow.gdshader#L2)
-
-With lateral +u pointing toward world −X, `(p0, p1, p2)` is **counter-clockwise seen from above**. Godot treats **clockwise** as front-facing, so you're looking at the back of every terrain triangle. The shader uses `cull_disabled` to stay visible, but with culling disabled Godot **flips the normal on back faces**. The road is then lit as if its normal points down: no direct sun, ambient only, and **no visible shadows** from the horse, trees or obstacles.
-
-**Fix:** swap two indices per triangle (`p0,p2,p1` / `p0,p3,p2`) and remove `cull_disabled`. This also cuts fill cost on the Shield.
-**Quick test:** temporarily set `ALBEDO = NORMAL * 0.5 + 0.5;` and look for a green-ish road (up normal in view space) rather than a magenta-ish one.
-
-### 1.3 Scenery, obstacles and collectibles use a mirrored (left-handed) basis **(verify)**
-- [TrackChunk.cs#L185-L186](file:///home/rengglian/EndlessRide/godot/Scripts/Track/TrackChunk.cs#L185-L186)
-- [ObstacleManager.cs#L51-L53](file:///home/rengglian/EndlessRide/godot/Scripts/Obstacles/ObstacleManager.cs#L51-L53)
-- [CollectibleManager.cs#L53-L55](file:///home/rengglian/EndlessRide/godot/Scripts/Collectibles/CollectibleManager.cs#L53-L55)
-
-`frame.Lateral` is the **screen-right** vector, which is world **−X** at s = 0. `new Basis(frame.Lateral, frame.Up, frame.Tangent)` therefore has **determinant −1**. Node-based meshes (obstacles) get rescued because Godot detects mirrored instance transforms. **MultiMesh instances don't**, so the trees and bushes are probably drawn with front/back faces swapped (inside-out shading, odd shadows).
-
-The horse is correct because it uses `up.Cross(fwd)`, and so is the unused [`SplineTrack.GetTransformAt`](file:///home/rengglian/EndlessRide/godot/Scripts/Track/SplineTrack.cs#L116-L131).
-**Fix:** route all placement through one right-handed helper (`GetTransformAt` or `new Basis(-frame.Lateral, frame.Up, frame.Tangent)`).
-
-Related: `new Basis(frame.Up, randYaw)` is multiplied on the **right** (local space), so the axis should be the local `Vector3.Up`, not the world-space `frame.Up`.
+### 1.3 Scenery, obstacles and collectibles use a mirrored (left-handed) basis [RESOLVED]
+- Replaced left-handed bases in `ObstacleManager.cs`, `CollectibleManager.cs`, and `TrackChunk.cs` with orthonormal right-handed transforms (`SplineTrack.GetTransformAt`).
+- Bounded MultiMesh inactive instance transforms to `sceneryPos` rather than `(0, 0, 0)`, preventing bounding box inflation across the world origin.
+- Adjusted adventurer rider upper and lower arm bone Euler rotations along local Z so arms reach forward to grip the reins rather than splaying into a T-pose.
 
 ### 1.4 A malformed UDP packet can lock the horse in a NaN state permanently [RESOLVED]
 - Added `float.IsFinite(steer)` validation discarding invalid packets.
@@ -88,7 +67,7 @@ The horse, camera and collectible animation only move at the 60 Hz physics tick.
 ## 2. 🟠 Medium-Priority Issues
 
 ### Rendering & Performance
-1. **Hidden MultiMesh instances at the world origin inflate the AABB.** [TrackChunk.cs#L167](file:///home/rengglian/EndlessRide/godot/Scripts/Track/TrackChunk.cs#L167), [#L192-L195](file:///home/rengglian/EndlessRide/godot/Scripts/Track/TrackChunk.cs#L192-L195). Unused slots get a zero-scale transform **at (0,0,0)**, so each chunk's AABB stretches from the origin to the chunk (kilometres later in a run). These MultiMeshes are then never frustum-culled and always land in the shadow pass. 18 of the 24 instances per chunk are wasted. **Fix:** group instances per variant and set `VisibleInstanceCount`, or put hidden instances at `sceneryPos` with zero scale.
+1. **Hidden MultiMesh instances at the world origin inflate the AABB. [RESOLVED]** Inactive MultiMesh slots are now anchored at `sceneryPos` with scale 0 instead of `(0, 0, 0)`, keeping each chunk's AABB tightly bounded and allowing proper frustum culling.
 2. **Obstacle and collectible meshes aren't shared.** [ObstaclePool.cs#L123-L283](file:///home/rengglian/EndlessRide/godot/Scripts/Obstacles/ObstaclePool.cs#L123-L283), [CollectiblePool.cs#L89-L130](file:///home/rengglian/EndlessRide/godot/Scripts/Collectibles/CollectiblePool.cs#L89-L130). The class comment says "shared geometries", but every entity creates its own `SphereMesh`/`BoxMesh`. With 64 pre-pooled obstacles × 6–13 `MeshInstance3D`s that's ~600 nodes, and **6–13 draw calls per visible obstacle** on a Tegra X1 with the GL Compatibility renderer. **Fix:** create meshes once per type, or better, bake each obstacle type into one `ArrayMesh` with `SurfaceTool` (one draw call per material), or use a MultiMesh per type.
 3. **Trimesh collider built for every chunk but never used.** [TrackChunk.cs#L85-L88](file:///home/rengglian/EndlessRide/godot/Scripts/Track/TrackChunk.cs#L85-L88), [#L157-L160](file:///home/rengglian/EndlessRide/godot/Scripts/Track/TrackChunk.cs#L157-L160). Nothing raycasts or uses physics, yet `GetFaces()` + `ConcavePolygonShape3D` runs on the main thread for each chunk (800 tris) and populates the broadphase. Remove it, or keep it behind a flag.
 4. **Main-thread mesh conversion.** [TrackChunk.cs#L132-L152](file:///home/rengglian/EndlessRide/godot/Scripts/Track/TrackChunk.cs#L132-L152). The worker produces `float[]`, which the main thread converts to `Vector3[]` and then into a new `ArrayMesh`. Have the worker emit `Vector3[]`/`Vector2[]` directly, and build the arrays on the worker. Optionally reuse the ArrayMesh with `ClearSurfaces()`.

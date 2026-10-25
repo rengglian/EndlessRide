@@ -505,12 +505,13 @@ public static class TrackMath
 
         float step = chunkLength / segments;
         int vIdx = 0;
+        float chunkV0 = ((startDist % Config.UvDistancePeriod) + Config.UvDistancePeriod) % Config.UvDistancePeriod;
 
         for (int i = 0; i <= segments; i++)
         {
             float s = startDist + i * step;
             var frame = ComputeBankedFrame(s, Config.GeometricBankSpeed);
-            float modS = ((s % Config.UvDistancePeriod) + Config.UvDistancePeriod) % Config.UvDistancePeriod;
+            float v = chunkV0 + i * step;
 
             for (int j = 0; j < crossSectionVerts; j++)
             {
@@ -536,7 +537,7 @@ public static class TrackMath
 
                 // Metre-based UVs
                 uvs[vIdx * 2] = u;
-                uvs[vIdx * 2 + 1] = modS;
+                uvs[vIdx * 2 + 1] = v;
 
                 vIdx++;
             }

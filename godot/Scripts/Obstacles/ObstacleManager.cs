@@ -43,14 +43,8 @@ public partial class ObstacleManager : Node3D
             };
             obstacle.LateralOffset = uOffset;
 
-            // Orient along track surface and banking
-            var frame = _track.GetBankedFrameAt(obstacle.Distance, Config.GeometricBankSpeed);
-            float groundH = TrackMath.GetGroundHeightAtOffset(uOffset);
-            Vector3 pos = frame.Point + frame.Lateral * uOffset + frame.Up * groundH;
-
-            Basis groundBasis = new Basis(frame.Lateral, frame.Up, frame.Tangent);
-            obstacle.Node.GlobalPosition = pos;
-            obstacle.Node.GlobalBasis = groundBasis;
+            // Orient along track surface and banking with right-handed basis
+            obstacle.Node.GlobalTransform = _track.GetTransformAt(obstacle.Distance, uOffset);
 
             _activeObstacles.Add(obstacle);
         }

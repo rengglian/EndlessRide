@@ -45,14 +45,8 @@ public partial class CollectibleManager : Node3D
             };
             c.LateralOffset = uOffset;
 
-            // Banked orientation
-            var frame = _track.GetBankedFrameAt(c.Distance, Config.GeometricBankSpeed);
-            float groundH = TrackMath.GetGroundHeightAtOffset(uOffset);
-            Vector3 pos = frame.Point + frame.Lateral * uOffset + frame.Up * groundH;
-
-            Basis groundBasis = new Basis(frame.Lateral, frame.Up, frame.Tangent);
-            c.Node.GlobalPosition = pos;
-            c.Node.GlobalBasis = groundBasis;
+            // Orient along track surface and banking with right-handed basis
+            c.Node.GlobalTransform = _track.GetTransformAt(c.Distance, uOffset);
 
             c.VisualGroup.Position = Vector3.Zero;
             c.VisualGroup.Rotation = new Vector3(0, c.Phase, 0);

@@ -160,13 +160,13 @@ public partial class GirlRiderEntity : Node3D
         }
 
         // 4. Arms reaching forward holding reins towards the bit
-        SetBoneRelativeRotation(skel, _boneUpperArmL, new Vector3(-0.80f, 0.20f, -0.40f));
-        SetBoneRelativeRotation(skel, _boneLowerArmL, new Vector3(-0.70f, 0.0f, -0.30f));
-        SetBoneRelativeRotation(skel, _boneWristL, new Vector3(0.0f, 0.25f, 0.0f));
+        SetBoneRelativeRotation(skel, _boneUpperArmL, new Vector3(0.0f, 0.0f, -0.85f));
+        SetBoneRelativeRotation(skel, _boneLowerArmL, new Vector3(0.0f, 0.0f, -0.55f));
+        SetBoneRelativeRotation(skel, _boneWristL, Vector3.Zero);
 
-        SetBoneRelativeRotation(skel, _boneUpperArmR, new Vector3(-0.80f, -0.20f, 0.40f));
-        SetBoneRelativeRotation(skel, _boneLowerArmR, new Vector3(-0.70f, 0.0f, 0.30f));
-        SetBoneRelativeRotation(skel, _boneWristR, new Vector3(0.0f, -0.25f, 0.0f));
+        SetBoneRelativeRotation(skel, _boneUpperArmR, new Vector3(0.0f, 0.0f, 0.85f));
+        SetBoneRelativeRotation(skel, _boneLowerArmR, new Vector3(0.0f, 0.0f, 0.55f));
+        SetBoneRelativeRotation(skel, _boneWristR, Vector3.Zero);
     }
 
     private void BuildProceduralRider()

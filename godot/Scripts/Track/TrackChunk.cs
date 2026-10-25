@@ -164,8 +164,6 @@ public partial class TrackChunk : Node3D
 
     private void PopulateScenery(SplineTrack spline)
     {
-        Transform3D zeroTransform = new(Basis.FromScale(Vector3.Zero), Vector3.Zero);
-
         for (int i = 0; i < SceneryCount; i++)
         {
             int seed = Math.Abs(ChunkIndex * 73856093) ^ (i * 19349663);
@@ -178,17 +176,19 @@ public partial class TrackChunk : Node3D
             float uOffset = side * (7.0f + rand2 * 11.0f);
             float groundH = TrackMath.GetGroundHeightAtOffset(uOffset);
 
-            var frame = spline.GetBankedFrameAt(s, Config.GeometricBankSpeed);
-            Vector3 sceneryPos = frame.Point + frame.Lateral * uOffset + frame.Up * groundH;
+            Transform3D surfaceXform = spline.GetTransformAt(s, uOffset);
+            Vector3 sceneryPos = surfaceXform.Origin;
 
-            // Align base orientation with terrain surface Up + random yaw
-            Basis yawBasis = new Basis(frame.Up, randYaw);
-            Basis alignBasis = new Basis(frame.Lateral, frame.Up, frame.Tangent) * yawBasis;
+            // Align base orientation with terrain surface Up + random yaw (right-handed basis)
+            Basis yawBasis = new Basis(surfaceXform.Basis.Y, randYaw);
+            Basis alignBasis = yawBasis * surfaceXform.Basis;
 
             // Deterministic scenery variant selection:
             // 0: Bush (~25%), 1: Pine (~25%), 2: Oak (~25%), 3: Birch (~25%)
             int variant = Math.Abs((ChunkIndex * 31) ^ (i * 17)) % 4;
 
+            // Zero transform positioned at sceneryPos so MultiMesh AABB stays tightly bounded to chunk
+            Transform3D zeroTransform = new(Basis.FromScale(Vector3.Zero), sceneryPos);
             _pineInstance.Multimesh.SetInstanceTransform(i, zeroTransform);
             _oakInstance.Multimesh.SetInstanceTransform(i, zeroTransform);
             _birchInstance.Multimesh.SetInstanceTransform(i, zeroTransform);

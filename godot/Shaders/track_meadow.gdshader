@@ -71,9 +71,9 @@ void fragment() {
 
 	// 4. Metre-Based Multi-Layer Splat Blending
 	// Path: |u| <= 3.8m
-	float pathMask = 1.0 - smoothstep(3.72, 3.85, absU);
-	// Curb: 3.8m <= |u| <= 4.15m (35cm wide curb)
-	float curbMask = smoothstep(3.70, 3.85, absU) * (1.0 - smoothstep(4.05, 4.25, absU));
+	float pathMask = 1.0 - smoothstep(3.72, 3.82, absU);
+	// Curb: 3.8m <= |u| <= 4.05m
+	float curbMask = smoothstep(3.72, 3.82, absU) * (1.0 - smoothstep(3.98, 4.08, absU));
 
 	vec3 col = mix(meadowColor, curbColor, curbMask);
 	col = mix(col, paverColor, pathMask);
