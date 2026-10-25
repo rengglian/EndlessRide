@@ -30,6 +30,11 @@ public partial class GameManager : Node3D
 {
     [Export] public Config.DifficultyPreset Difficulty { get; set; } = Config.DifficultyPreset.Standard;
     [Export] public string PlayerName { get; set; } = "Rider 1";
+    [Export] public uint ActiveSeed { get; set; } = 1337;
+
+    private Config.DifficultyPreset? _queuedDifficulty;
+    private string? _queuedPlayerName;
+    private uint? _queuedSeed;
 
     public GameState State { get; private set; } = GameState.Start;
     public float DistanceTraveled => HorseController?.Distance ?? 0.0f;
@@ -124,7 +129,7 @@ public partial class GameManager : Node3D
             if (State == GameState.Running)
             {
                 State = GameState.Paused;
-                WebServer?.BroadcastRoomState("PAUSED", Difficulty.ToString().ToLowerInvariant(), PlayerName, _leaderboardManager.Entries);
+                PublishRoomState("PAUSED");
             }
         }).CallDeferred();
 
@@ -133,7 +138,7 @@ public partial class GameManager : Node3D
             if (State == GameState.Paused)
             {
                 State = GameState.Running;
-                WebServer?.BroadcastRoomState("RUNNING", Difficulty.ToString().ToLowerInvariant(), PlayerName, _leaderboardManager.Entries);
+                PublishRoomState("RUNNING");
             }
         }).CallDeferred();
 
@@ -163,9 +168,12 @@ public partial class GameManager : Node3D
 
         WebServer.OnPlayerNameChanged += name => Callable.From(() =>
         {
-            PlayerName = name;
-            GD.Print($"[GameManager] Active rider profile: {PlayerName}");
-            WebServer?.BroadcastRoomState(State.ToString().ToUpperInvariant(), Difficulty.ToString().ToLowerInvariant(), PlayerName, _leaderboardManager.Entries);
+            SetPlayerName(name);
+        }).CallDeferred();
+
+        WebServer.OnSeedChanged += seed => Callable.From(() =>
+        {
+            SetSeed(seed);
         }).CallDeferred();
 
         GD.Print("[GameManager] Initialized Endless Ride Engine (Full TV/Arcade Stack Active).");
@@ -173,7 +181,7 @@ public partial class GameManager : Node3D
 
         HUD.UpdateLeaderboard(_leaderboardManager.Entries);
         WebServer?.BroadcastLeaderboard(_leaderboardManager.Entries);
-        WebServer?.BroadcastRoomState(State.ToString().ToUpperInvariant(), Difficulty.ToString().ToLowerInvariant(), PlayerName, _leaderboardManager.Entries);
+        PublishRoomState();
     }
 
     public override void _PhysicsProcess(double delta)
@@ -205,7 +213,7 @@ public partial class GameManager : Node3D
                     State = GameState.Running;
                     HorseController.PlayGallopAnimation();
                     GD.Print("[GameManager] RACE STARTED!");
-                    WebServer?.BroadcastRoomState("RUNNING", Difficulty.ToString().ToLowerInvariant(), PlayerName, _leaderboardManager.Entries);
+                    PublishRoomState("RUNNING");
                 }
                 break;
 
@@ -368,6 +376,13 @@ public partial class GameManager : Node3D
 
     public void SetDifficulty(Config.DifficultyPreset preset)
     {
+        if (State is GameState.Running or GameState.Countdown)
+        {
+            _queuedDifficulty = preset;
+            GD.Print($"[GameManager] Difficulty '{preset}' queued for next run.");
+            return;
+        }
+
         Difficulty = preset;
         var config = Config.DifficultyPresets[Difficulty];
         if (HorseController != null)
@@ -375,13 +390,43 @@ public partial class GameManager : Node3D
             HorseController.BaseSpeed = config.BaseSpeed;
             HorseController.MaxSpeed = config.MaxSpeed;
             HorseController.AccelRate = config.AccelRate;
-            if (State == GameState.Running)
-            {
-                HorseController.Speed = Math.Clamp(HorseController.Speed, config.BaseSpeed, config.MaxSpeed);
-            }
+            HorseController.Speed = config.BaseSpeed;
         }
         GD.Print($"[GameManager] Difficulty updated to: {Difficulty} ({config.Label}: {config.BaseSpeed}-{config.MaxSpeed} m/s)");
-        WebServer?.BroadcastRoomState(State.ToString().ToUpperInvariant(), Difficulty.ToString().ToLowerInvariant(), PlayerName, _leaderboardManager.Entries);
+        PublishRoomState();
+    }
+
+    public void SetPlayerName(string name)
+    {
+        if (State is GameState.Running or GameState.Countdown)
+        {
+            _queuedPlayerName = name;
+            GD.Print($"[GameManager] Rider name '{name}' queued for next run.");
+            return;
+        }
+
+        PlayerName = name;
+        GD.Print($"[GameManager] Active rider profile: {PlayerName}");
+        PublishRoomState();
+    }
+
+    public void SetSeed(uint seed)
+    {
+        if (State is GameState.Running or GameState.Countdown)
+        {
+            _queuedSeed = seed;
+            GD.Print($"[GameManager] Seed #{seed} queued for next run.");
+            return;
+        }
+
+        ActiveSeed = seed;
+        if (_chunkManager != null)
+        {
+            _chunkManager.RunSeed = seed;
+            _chunkManager.InitTrack();
+        }
+        GD.Print($"[GameManager] Track seed set to #{ActiveSeed}.");
+        PublishRoomState();
     }
 
     public void StartGame()
@@ -393,6 +438,22 @@ public partial class GameManager : Node3D
         HorseshoesCollected = 0;
         CountdownTimer = Config.CountdownSeconds;
 
+        if (_queuedDifficulty.HasValue)
+        {
+            Difficulty = _queuedDifficulty.Value;
+            _queuedDifficulty = null;
+        }
+        if (_queuedPlayerName != null)
+        {
+            PlayerName = _queuedPlayerName;
+            _queuedPlayerName = null;
+        }
+        if (_queuedSeed.HasValue)
+        {
+            ActiveSeed = _queuedSeed.Value;
+            _queuedSeed = null;
+        }
+
         var config = Config.DifficultyPresets[Difficulty];
         HorseController.BaseSpeed = config.BaseSpeed;
         HorseController.MaxSpeed = config.MaxSpeed;
@@ -401,12 +462,13 @@ public partial class GameManager : Node3D
 
         ObstacleManager.Reset();
         CollectibleManager.Reset();
+        _chunkManager.RunSeed = ActiveSeed;
         _chunkManager.InitTrack();
         Camera.ResetCamera();
 
         State = GameState.Countdown;
-        GD.Print("[GameManager] Countdown initiated (3-2-1).");
-        WebServer?.BroadcastRoomState("COUNTDOWN", Difficulty.ToString().ToLowerInvariant(), PlayerName, _leaderboardManager.Entries);
+        GD.Print($"[GameManager] Countdown initiated (3-2-1) [Difficulty: {Difficulty}, Seed: #{ActiveSeed}].");
+        PublishRoomState("COUNTDOWN");
     }
 
     public void CollectApple()
@@ -442,6 +504,7 @@ public partial class GameManager : Node3D
             Difficulty.ToString().ToLowerInvariant(),
             ApplesCollected,
             HorseshoesCollected,
+            ActiveSeed,
             out bool isNewRecord,
             out int rankIndex
         );
@@ -449,8 +512,14 @@ public partial class GameManager : Node3D
         HUD.UpdateLeaderboard(_leaderboardManager.Entries, rankIndex, isNewRecord);
         HUD.UpdateHUD(State, finalScore, DistanceTraveled, PlayerSpeed, Multiplier, MultiplierTimer, ApplesCollected, HorseshoesCollected, CountdownTimer);
         WebServer?.BroadcastLeaderboard(_leaderboardManager.Entries);
-        WebServer?.BroadcastRoomState("GAMEOVER", Difficulty.ToString().ToLowerInvariant(), PlayerName, _leaderboardManager.Entries);
+        PublishRoomState("GAMEOVER");
 
-        GD.Print($"[GameManager] CRASH! GAME OVER at {DistanceTraveled:F1}m! Final Score: {finalScore} (Rank: {(rankIndex >= 0 ? $"#{rankIndex + 1}" : "unranked")}, NewRecord: {isNewRecord})");
+        GD.Print($"[GameManager] CRASH! GAME OVER at {DistanceTraveled:F1}m! Final Score: {finalScore} (Seed: #{ActiveSeed}, Rank: {(rankIndex >= 0 ? $"#{rankIndex + 1}" : "unranked")}, NewRecord: {isNewRecord})");
+    }
+
+    private void PublishRoomState(string? stateOverride = null)
+    {
+        string s = stateOverride ?? State.ToString().ToUpperInvariant();
+        WebServer?.BroadcastRoomState(s, Difficulty.ToString().ToLowerInvariant(), PlayerName, _leaderboardManager.Entries, ActiveSeed);
     }
 }

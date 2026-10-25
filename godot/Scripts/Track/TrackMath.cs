@@ -315,6 +315,8 @@ public static class TrackMath
 
         float startOffset = MathF.Max(20.0f, 40.0f - startDist);
         float d = startOffset;
+        int lastOpenLane = 1; // Start in Center lane
+        float lastRowDist = startDist;
 
         while (d < chunkLength - 8.0f)
         {
@@ -326,10 +328,19 @@ public static class TrackMath
                 int laneIdx = (int)MathF.Floor(rng() * 3.0f);
                 int typeIdx = (int)MathF.Floor(rng() * types.Length);
                 anchors.Add(new ObstacleAnchor(worldDist, lanes[laneIdx], types[typeIdx]));
+                lastOpenLane = laneIdx == 1 ? (rng() < 0.5f ? 0 : 2) : 1;
             }
             else
             {
                 int openLaneIndex = (int)MathF.Floor(rng() * 3.0f);
+                // Ensure double-obstacle open lanes do not jump 2 lanes (e.g. Left -> Right) without sufficient spacing
+                int laneJump = Math.Abs(openLaneIndex - lastOpenLane);
+                float gap = worldDist - lastRowDist;
+                if (laneJump > 1 && gap < 24.0f)
+                {
+                    openLaneIndex = Math.Clamp(lastOpenLane + (openLaneIndex > lastOpenLane ? 1 : -1), 0, 2);
+                }
+
                 for (int l = 0; l < 3; l++)
                 {
                     if (l != openLaneIndex)
@@ -338,8 +349,10 @@ public static class TrackMath
                         anchors.Add(new ObstacleAnchor(worldDist, lanes[l], types[typeIdx]));
                     }
                 }
+                lastOpenLane = openLaneIndex;
             }
 
+            lastRowDist = worldDist;
             d += baseSpacing + rng() * 6.0f;
         }
 

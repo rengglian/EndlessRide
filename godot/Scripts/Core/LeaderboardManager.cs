@@ -13,6 +13,7 @@ public class LeaderboardEntry
     public int Score { get; set; }
     public int Distance { get; set; }
     public string Difficulty { get; set; } = "standard";
+    public uint Seed { get; set; } = 1337;
     public int Apples { get; set; }
     public int Horseshoes { get; set; }
     public long Timestamp { get; set; }
@@ -106,6 +107,7 @@ public class LeaderboardManager
         string difficulty,
         int apples,
         int horseshoes,
+        uint seed,
         out bool isNewRecord,
         out int rankIndex)
     {
@@ -120,6 +122,7 @@ public class LeaderboardManager
                 Score = score,
                 Distance = distance,
                 Difficulty = string.IsNullOrWhiteSpace(difficulty) ? "standard" : difficulty.ToLowerInvariant(),
+                Seed = seed,
                 Apples = apples,
                 Horseshoes = horseshoes,
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
@@ -132,7 +135,7 @@ public class LeaderboardManager
             rankIndex = Array.IndexOf(_snapshot, newEntry);
             bool madeBoard = rankIndex >= 0 && rankIndex < MaxEntries;
 
-            GD.Print($"[LeaderboardManager] New score recorded: {newEntry.Name} - {newEntry.Score} pts ({newEntry.Distance}m, {newEntry.Difficulty}). Rank: {(madeBoard ? $"#{rankIndex + 1}" : "Unranked")}, NewRecord: {isNewRecord}");
+            GD.Print($"[LeaderboardManager] New score recorded: {newEntry.Name} - {newEntry.Score} pts ({newEntry.Distance}m, {newEntry.Difficulty}, Seed #{newEntry.Seed}). Rank: {(madeBoard ? $"#{rankIndex + 1}" : "Unranked")}, NewRecord: {isNewRecord}");
             return madeBoard;
         }
     }
@@ -161,11 +164,11 @@ public class LeaderboardManager
     {
         return new List<LeaderboardEntry>
         {
-            new() { Name = "Champion", Score = 2500, Distance = 1200, Difficulty = "pro" },
-            new() { Name = "TrailBlazer", Score = 1800, Distance = 950, Difficulty = "standard" },
-            new() { Name = "Rider 1", Score = 1200, Distance = 700, Difficulty = "standard" },
-            new() { Name = "SwiftHoof", Score = 850, Distance = 550, Difficulty = "relaxed" },
-            new() { Name = "Meadow", Score = 500, Distance = 350, Difficulty = "relaxed" }
+            new() { Name = "Champion", Score = 2500, Distance = 1200, Difficulty = "pro", Seed = 1337 },
+            new() { Name = "TrailBlazer", Score = 1800, Distance = 950, Difficulty = "standard", Seed = 1337 },
+            new() { Name = "Rider 1", Score = 1200, Distance = 700, Difficulty = "standard", Seed = 1337 },
+            new() { Name = "SwiftHoof", Score = 850, Distance = 550, Difficulty = "relaxed", Seed = 1337 },
+            new() { Name = "Meadow", Score = 500, Distance = 350, Difficulty = "relaxed", Seed = 1337 }
         };
     }
 }

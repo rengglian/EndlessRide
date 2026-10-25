@@ -29,7 +29,7 @@ public partial class TrackChunkManager : Node3D
     private readonly ConcurrentQueue<TrackChunkGeometryData> _readyDataQueue = new();
 
     private int _generationId = 0;
-    private uint _runSeed = 1337;
+    [Export] public uint RunSeed { get; set; } = 1337;
 
     public override void _Ready()
     {
@@ -135,7 +135,7 @@ public partial class TrackChunkManager : Node3D
         _pendingRequests.Add(chunkIndex);
         float startDist = chunkIndex * ChunkLength;
         int currentGen = _generationId;
-        uint seed = _runSeed;
+        uint seed = RunSeed;
         float length = ChunkLength;
 
         // Offload pure analytical geometry math to worker thread

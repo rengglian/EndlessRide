@@ -311,11 +311,13 @@ public partial class InGameHUD : CanvasLayer
             rankLabel.AddThemeFontSizeOverride("font_size", 15);
             row.AddChild(rankLabel);
 
-            // Name & Difficulty
-            string diffTag = string.IsNullOrEmpty(entry.Difficulty) ? "" : $" ({entry.Difficulty})";
+            // Name, Difficulty & Seed
+            string diffStr = string.IsNullOrEmpty(entry.Difficulty) ? "standard" : entry.Difficulty;
+            string seedStr = entry.Seed > 0 ? $" · #{entry.Seed}" : "";
+            string tag = $" ({diffStr}{seedStr})";
             var nameLabel = new Label
             {
-                Text = $"{entry.Name}{diffTag}",
+                Text = $"{entry.Name}{tag}",
                 SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
                 ClipText = true
             };

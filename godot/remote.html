@@ -811,6 +811,19 @@
     </div>
   </div>
 
+  <!-- Track Seed Configuration -->
+  <div class="card">
+    <div class="card-title">
+      <span>🎲 Track Seed</span>
+      <span id="activeSeedDisplay" class="active-badge" style="background: rgba(14, 165, 233, 0.15); color: #38bdf8; border: 1px solid rgba(14, 165, 233, 0.3);">#1337</span>
+    </div>
+    <div class="rider-input-row">
+      <input type="number" id="trackSeedInput" class="rider-input" placeholder="Seed (default 1337)..." value="1337" min="1" max="4294967295" />
+      <button id="applySeedBtn" class="btn-add-rider">Set</button>
+      <button id="randomSeedBtn" class="btn-add-rider" style="background: #374151; border-color: #4b5563;">🎲 Random</button>
+    </div>
+  </div>
+
   <!-- Difficulty & Speed Presets -->
   <div class="card">
     <div class="card-title">
@@ -975,6 +988,11 @@
     const playerPills = document.getElementById('playerPills');
     const newRiderInput = document.getElementById('newRiderInput');
     const addRiderBtn = document.getElementById('addRiderBtn');
+
+    const trackSeedInput = document.getElementById('trackSeedInput');
+    const applySeedBtn = document.getElementById('applySeedBtn');
+    const randomSeedBtn = document.getElementById('randomSeedBtn');
+    const activeSeedDisplay = document.getElementById('activeSeedDisplay');
 
     const diffCards = {
       relaxed: document.getElementById('diffRelaxed'),
@@ -1174,6 +1192,19 @@
         activePlayerDisplay.textContent = data.playerName;
       }
 
+      // Track Seed
+      if (typeof data.seed === 'number' || typeof data.seed === 'string') {
+        const seedVal = parseInt(data.seed, 10);
+        if (!isNaN(seedVal) && seedVal > 0) {
+          if (trackSeedInput && document.activeElement !== trackSeedInput) {
+            trackSeedInput.value = seedVal;
+          }
+          if (activeSeedDisplay) {
+            activeSeedDisplay.textContent = `#${seedVal}`;
+          }
+        }
+      }
+
       // 5. Sensitivity & Tare
       if (typeof data.sensitivity === 'number') {
         sensitivitySlider.value = data.sensitivity;
@@ -1334,11 +1365,12 @@
         const score = typeof entry.score === 'number' ? entry.score : (typeof entry.Score === 'number' ? entry.Score : 0);
         const dist = typeof entry.distance === 'number' ? entry.distance : (typeof entry.Distance === 'number' ? entry.Distance : 0);
         const diff = entry.difficulty || entry.Difficulty || 'standard';
+        const seed = entry.seed || entry.Seed || 1337;
 
         return `
           <tr>
             <td>${rankHtml}</td>
-            <td style="font-weight: 700; color: #f3f4f6;">${escapeHtml(name)}</td>
+            <td style="font-weight: 700; color: #f3f4f6;">${escapeHtml(name)} <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">(#${seed})</span></td>
             <td style="text-align: right;" class="lb-score">${score.toLocaleString()}</td>
             <td style="text-align: right; color: var(--text-muted);">${dist.toLocaleString()}m</td>
             <td style="text-align: right;"><span class="lb-diff ${diff}">${diff}</span></td>
@@ -1387,6 +1419,27 @@
     newRiderInput.onkeydown = (e) => {
       if (e.key === 'Enter') {
         addRiderBtn.click();
+      }
+    };
+
+    applySeedBtn.onclick = () => {
+      const val = parseInt(trackSeedInput.value, 10);
+      if (!isNaN(val) && val > 0) {
+        sendWsMessage({ type: 'set_seed', seed: val });
+        if (activeSeedDisplay) activeSeedDisplay.textContent = `#${val}`;
+      }
+    };
+
+    randomSeedBtn.onclick = () => {
+      const randSeed = Math.floor(Math.random() * 900000) + 1000;
+      trackSeedInput.value = randSeed;
+      sendWsMessage({ type: 'set_seed', seed: randSeed });
+      if (activeSeedDisplay) activeSeedDisplay.textContent = `#${randSeed}`;
+    };
+
+    trackSeedInput.onkeydown = (e) => {
+      if (e.key === 'Enter') {
+        applySeedBtn.click();
       }
     };
 

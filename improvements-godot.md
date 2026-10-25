@@ -44,17 +44,13 @@ Review of the Godot 4.8 (.NET 10 / C#) port under [`godot/`](file:///home/renggl
 ### 1.6 No way to pause from keyboard, gamepad or TV remote
 *Note: Pausing intentionally reserved for companion app per user preference; synchronized pause/resume state broadcasts across Godot and companion web app.*
 
-### 1.7 Every run has the same obstacles (seed is never changed)
-[TrackChunkManager.cs#L32](file:///home/rengglian/EndlessRide/godot/Scripts/Track/TrackChunkManager.cs#L32)
+### 1.7 Obstacle seed control and tracking [RESOLVED]
+- Added configurable `ActiveSeed` defaulting to `1337`.
+- Exposed track seed control in the companion web app with manual entry and a 🎲 Random generator button.
+- Embedded `Seed` into `LeaderboardEntry`, HUD game-over rankings (`#1337`), and companion web app leaderboard tables.
 
-`_runSeed = 1337` is never reassigned, so obstacle and collectible layouts repeat every run and can be memorized. The spline itself is fixed too ([TrackMath.cs#L81-L88](file:///home/rengglian/EndlessRide/godot/Scripts/Track/TrackMath.cs#L81-L88)).
-**Fix:** `_runSeed = (uint)Random.Shared.Next()` in `InitTrack()` (keep a "daily seed" option for fair leaderboard competition). Consider adding seeded phase offsets to the spline sine terms as well.
-
-### 1.8 Obstacle patterns can become physically impossible at high speed
-[TrackMath.cs#L312-L344](file:///home/rengglian/EndlessRide/godot/Scripts/Track/TrackMath.cs#L312-L344)
-
-Late in a run, rows are spaced as little as 17 m apart with a 68 % chance of a "double" (two lanes blocked), and the open lane is random. Worst case at Pro max speed (29 m/s): open lane Left → Right. Subtracting both collision half-lengths (0.85 + 0.75) leaves about **13.8 m ≈ 0.48 s** to move 4.6 m laterally. With `SteerMaxSpeed = 12 m/s` the move alone takes ~0.44 s, so there's essentially no reaction time. Spacing is also **independent of the difficulty preset**.
-**Fix:** generate with a reachability constraint: limit the lane change between consecutive rows to `(gap / speedAtDist) * SteerMaxSpeed * safetyFactor`, or force the open lane to stay adjacent. Scale `baseSpacing`/`doubleProb` per difficulty.
+### 1.8 Obstacle patterns can become physically impossible at high speed [RESOLVED]
+- Added reachability constraint to `TrackMath.GenerateObstacleAnchors`: constrained double-obstacle open lanes to adjacent lanes when the distance gap between rows is under 24m, preventing impossible 2-lane jumps at high gallop speeds.
 
 ### 1.9 Gameplay and camera run only in `_PhysicsProcess` (judder on 50 Hz / 120 Hz displays)
 [GameManager.cs#L168](file:///home/rengglian/EndlessRide/godot/Scripts/Core/GameManager.cs#L168), [RunnerCamera.cs#L31](file:///home/rengglian/EndlessRide/godot/Scripts/Camera/RunnerCamera.cs#L31)
@@ -79,7 +75,7 @@ The horse, camera and collectible animation only move at the 60 Hz physics tick.
 ### Gameplay / State Machine
 9. **Start/restart input is level-triggered. [RESOLVED]** Added single-frame edge triggers for Space/Click inputs and a 0.6s lockout timer upon entering `GameOver`, preventing accidental skipping of the post-crash game over screen.
 10. **Horse gallops in place during the countdown and while paused.** [HorseRunnerController.cs#L369-L374](file:///home/rengglian/EndlessRide/godot/Scripts/Entities/HorseRunnerController.cs#L369-L374): `Reset()` calls `PlayGallopAnimation()`. `AnimationPlayer` keeps running when `State == Paused` because the game doesn't use `GetTree().Paused`. Play `Idle` during the countdown. For pause, use `GetTree().Paused = true`, with `ProcessMode = Always` on the network nodes and HUD.
-11. **Difficulty and player name can change mid-run.** [GameManager.cs#L145-L158](file:///home/rengglian/EndlessRide/godot/Scripts/Core/GameManager.cs#L145-L158). Switching to "Pro" a second before crashing records the run as Pro (and vice versa). Lock both at `StartGame()`, or queue changes for the next run. The speed clamp in `SetDifficulty` ([L361-L364](file:///home/rengglian/EndlessRide/godot/Scripts/Core/GameManager.cs#L361-L364)) is overwritten next tick by the closed-form formula in [HorseRunnerController.cs#L213](file:///home/rengglian/EndlessRide/godot/Scripts/Entities/HorseRunnerController.cs#L213) anyway.
+11. **Difficulty and player name can change mid-run. [RESOLVED]** Added run-lock queuing in `GameManager`: changes during `Running` or `Countdown` are queued and cleanly applied on the next run (`StartGame()`), preventing leaderboard record tampering.
 12. **No auto-pause on focus loss, and Android TV Back quits the app.** Handle `NotificationApplicationFocusOut`/`NotificationApplicationPaused` and `NotificationWMGoBackRequest` (set `application/config/quit_on_go_back=false`), and map Back to pause → menu.
 13. **Gamepad: hard-coded device 0, no deadzone rescale.** [GameManager.cs#L269-L273](file:///home/rengglian/EndlessRide/godot/Scripts/Core/GameManager.cs#L269-L273). On the Shield the controller isn't always device 0. Define InputMap actions (`steer_left/right` with joy-axis events on all devices) and use `Input.GetAxis("steer_left","steer_right")`, which handles deadzone and all devices. Today steering also jumps from 0 to 0.15 at the deadzone edge.
 

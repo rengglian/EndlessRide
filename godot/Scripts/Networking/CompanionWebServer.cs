@@ -32,6 +32,7 @@ public partial class CompanionWebServer : Node
     public event Action? OnToggleInvertCommand;
     public event Action<string>? OnDifficultyChanged;
     public event Action<string>? OnPlayerNameChanged;
+    public event Action<uint>? OnSeedChanged;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -47,6 +48,7 @@ public partial class CompanionWebServer : Node
     private string _lastGameState = "START";
     private string _lastDifficulty = "standard";
     private string _lastPlayerName = "Rider 1";
+    public uint LastSeed { get; set; } = 1337;
     public string LastDeviceIp { get; set; } = string.Empty;
     private IReadOnlyList<LeaderboardEntry>? _cachedLeaderboard;
 
@@ -307,6 +309,20 @@ public partial class CompanionWebServer : Node
                     }
                     break;
 
+                case "set_seed":
+                    if (root.TryGetProperty("seed", out var seedProp))
+                    {
+                        uint seedVal = 1337;
+                        if (seedProp.ValueKind == JsonValueKind.Number && seedProp.TryGetUInt32(out uint sNum))
+                            seedVal = sNum;
+                        else if (seedProp.ValueKind == JsonValueKind.String && uint.TryParse(seedProp.GetString(), out uint sStr))
+                            seedVal = sStr;
+
+                        LastSeed = seedVal;
+                        OnSeedChanged?.Invoke(LastSeed);
+                    }
+                    break;
+
                 case "select_player":
                     if (root.TryGetProperty("playerName", out var nameProp))
                     {
@@ -355,11 +371,12 @@ public partial class CompanionWebServer : Node
         }
     }
 
-    public void BroadcastRoomState(string gameState, string difficulty, string playerName, IReadOnlyList<LeaderboardEntry>? leaderboard = null)
+    public void BroadcastRoomState(string gameState, string difficulty, string playerName, IReadOnlyList<LeaderboardEntry>? leaderboard = null, uint? seed = null)
     {
         _lastGameState = gameState;
         _lastDifficulty = difficulty;
         _lastPlayerName = playerName;
+        if (seed.HasValue) LastSeed = seed.Value;
         if (leaderboard != null)
         {
             _cachedLeaderboard = leaderboard;
@@ -373,6 +390,7 @@ public partial class CompanionWebServer : Node
             gameState = _lastGameState,
             difficulty = _lastDifficulty,
             playerName = _lastPlayerName,
+            seed = LastSeed,
             players = new[] { _lastPlayerName, "Rider 1", "Rider 2", "Pro" },
             leaderboard = _cachedLeaderboard ?? (object)Array.Empty<LeaderboardEntry>(),
             atoms3Ip = LastDeviceIp
@@ -417,6 +435,7 @@ public partial class CompanionWebServer : Node
             gameState = _lastGameState,
             difficulty = _lastDifficulty,
             playerName = _lastPlayerName,
+            seed = LastSeed,
             players = new[] { _lastPlayerName, "Rider 1", "Rider 2", "Pro" },
             leaderboard = _cachedLeaderboard ?? (object)Array.Empty<LeaderboardEntry>(),
             atoms3Ip = LastDeviceIp
