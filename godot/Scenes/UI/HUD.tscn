@@ -1,0 +1,234 @@
+[gd_scene format=3 uid="uid://c7x68u5b2q5q4"]
+
+[ext_resource type="Script" uid="uid://5r247ty6sdm3" path="res://Scripts/UI/InGameHUD.cs" id="1_hud"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
+content_margin_left = 28.0
+content_margin_top = 20.0
+content_margin_right = 28.0
+content_margin_bottom = 20.0
+bg_color = Color(0.06, 0.09, 0.16, 0.94)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(1, 1, 1, 0.12)
+corner_radius_top_left = 16
+corner_radius_top_right = 16
+corner_radius_bottom_right = 16
+corner_radius_bottom_left = 16
+
+[node name="InGameHUD" type="CanvasLayer" node_paths=PackedStringArray("ScoreLabel", "DistanceLabel", "SpeedLabel", "MultiplierLabel", "MultiplierBar", "ApplesLabel", "ShoesLabel", "SimpleModal", "ModalTitle", "ModalSubtitle", "GameOverPanel", "GameOverTitle", "GameOverRecordBadge", "GameOverStatsLabel", "LeaderboardRowsBox", "GameOverPrompt")]
+script = ExtResource("1_hud")
+ScoreLabel = NodePath("HUD_Root/TopBar/ScoreBox/ScoreLabel")
+DistanceLabel = NodePath("HUD_Root/TopBar/StatsBox/DistanceLabel")
+SpeedLabel = NodePath("HUD_Root/TopBar/StatsBox/SpeedLabel")
+MultiplierLabel = NodePath("HUD_Root/TopBar/MultiplierBox/MultiplierLabel")
+MultiplierBar = NodePath("HUD_Root/TopBar/MultiplierBox/MultiplierBar")
+ApplesLabel = NodePath("HUD_Root/PickupsBox/ApplesLabel")
+ShoesLabel = NodePath("HUD_Root/PickupsBox/ShoesLabel")
+SimpleModal = NodePath("HUD_Root/CenterModal")
+ModalTitle = NodePath("HUD_Root/CenterModal/ModalVBox/ModalTitle")
+ModalSubtitle = NodePath("HUD_Root/CenterModal/ModalVBox/ModalSubtitle")
+GameOverPanel = NodePath("HUD_Root/GameOverPanel")
+GameOverTitle = NodePath("HUD_Root/GameOverPanel/ContentVBox/GameOverTitle")
+GameOverRecordBadge = NodePath("HUD_Root/GameOverPanel/ContentVBox/RecordBadge")
+GameOverStatsLabel = NodePath("HUD_Root/GameOverPanel/ContentVBox/SummaryStatsLabel")
+LeaderboardRowsBox = NodePath("HUD_Root/GameOverPanel/ContentVBox/LeaderboardRows")
+GameOverPrompt = NodePath("HUD_Root/GameOverPanel/ContentVBox/GameOverPrompt")
+
+[node name="HUD_Root" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="TopBar" type="HBoxContainer" parent="HUD_Root"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 32.0
+offset_top = 24.0
+offset_right = -32.0
+offset_bottom = 80.0
+grow_horizontal = 2
+
+[node name="ScoreBox" type="VBoxContainer" parent="HUD_Root/TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ScoreTitle" type="Label" parent="HUD_Root/TopBar/ScoreBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+theme_override_font_sizes/font_size = 14
+text = "SCORE"
+
+[node name="ScoreLabel" type="Label" parent="HUD_Root/TopBar/ScoreBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 36
+text = "0"
+
+[node name="MultiplierBox" type="VBoxContainer" parent="HUD_Root/TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="MultiplierLabel" type="Label" parent="HUD_Root/TopBar/MultiplierBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
+theme_override_font_sizes/font_size = 24
+text = "1.0x MULTIPLIER"
+
+[node name="MultiplierBar" type="ProgressBar" parent="HUD_Root/TopBar/MultiplierBox"]
+custom_minimum_size = Vector2(160, 10)
+layout_mode = 2
+max_value = 1.0
+value = 1.0
+show_percentage = false
+
+[node name="StatsBox" type="VBoxContainer" parent="HUD_Root/TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+alignment = 2
+
+[node name="DistanceLabel" type="Label" parent="HUD_Root/TopBar/StatsBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "0 m"
+horizontal_alignment = 2
+
+[node name="SpeedLabel" type="Label" parent="HUD_Root/TopBar/StatsBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.3, 0.8, 1, 1)
+theme_override_font_sizes/font_size = 22
+text = "65 km/h"
+horizontal_alignment = 2
+
+[node name="PickupsBox" type="HBoxContainer" parent="HUD_Root"]
+layout_mode = 0
+offset_left = 32.0
+offset_top = 96.0
+offset_right = 320.0
+offset_bottom = 136.0
+
+[node name="ApplesLabel" type="Label" parent="HUD_Root/PickupsBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.4, 0.4, 1)
+theme_override_font_sizes/font_size = 22
+text = "🍎 0  "
+
+[node name="ShoesLabel" type="Label" parent="HUD_Root/PickupsBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
+theme_override_font_sizes/font_size = 22
+text = "🧲 0"
+
+[node name="CenterModal" type="Control" parent="HUD_Root"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -340.0
+offset_top = -140.0
+offset_right = 340.0
+offset_bottom = 140.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ModalVBox" type="VBoxContainer" parent="HUD_Root/CenterModal"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 1
+
+[node name="ModalTitle" type="Label" parent="HUD_Root/CenterModal/ModalVBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 52
+text = "ENDLESS RIDE"
+horizontal_alignment = 1
+
+[node name="ModalSubtitle" type="Label" parent="HUD_Root/CenterModal/ModalVBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.85, 0.85, 0.85, 1)
+theme_override_font_sizes/font_size = 24
+text = "PRESS SPACE / TAP TO START"
+horizontal_alignment = 1
+
+[node name="GameOverPanel" type="PanelContainer" parent="HUD_Root"]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -360.0
+offset_top = -280.0
+offset_right = 360.0
+offset_bottom = 280.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="ContentVBox" type="VBoxContainer" parent="HUD_Root/GameOverPanel"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="GameOverTitle" type="Label" parent="HUD_Root/GameOverPanel/ContentVBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.94, 0.27, 0.27, 1)
+theme_override_font_sizes/font_size = 38
+text = "GAME OVER"
+horizontal_alignment = 1
+
+[node name="RecordBadge" type="Label" parent="HUD_Root/GameOverPanel/ContentVBox"]
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.98, 0.75, 0.14, 1)
+theme_override_font_sizes/font_size = 18
+text = "★ NEW ALL-TIME RECORD! ★"
+horizontal_alignment = 1
+
+[node name="SummaryStatsLabel" type="Label" parent="HUD_Root/GameOverPanel/ContentVBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.75, 0.82, 1)
+theme_override_font_sizes/font_size = 18
+text = "Score: 0 pts  ·  Distance: 0 m  ·  🍎 0  ·  🧲 0"
+horizontal_alignment = 1
+
+[node name="HSeparator1" type="HSeparator" parent="HUD_Root/GameOverPanel/ContentVBox"]
+modulate = Color(1, 1, 1, 0.2)
+layout_mode = 2
+
+[node name="LeaderboardHeader" type="HBoxContainer" parent="HUD_Root/GameOverPanel/ContentVBox"]
+layout_mode = 2
+
+[node name="LeaderboardTitle" type="Label" parent="HUD_Root/GameOverPanel/ContentVBox/LeaderboardHeader"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.22, 0.74, 0.97, 1)
+theme_override_font_sizes/font_size = 20
+text = "🏆 TOP RIDERS"
+
+[node name="LeaderboardRows" type="VBoxContainer" parent="HUD_Root/GameOverPanel/ContentVBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HSeparator2" type="HSeparator" parent="HUD_Root/GameOverPanel/ContentVBox"]
+modulate = Color(1, 1, 1, 0.2)
+layout_mode = 2
+
+[node name="GameOverPrompt" type="Label" parent="HUD_Root/GameOverPanel/ContentVBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.93, 0.96, 1)
+theme_override_font_sizes/font_size = 20
+text = "PRESS SPACE / TAP / (A) TO RIDE AGAIN"
+horizontal_alignment = 1

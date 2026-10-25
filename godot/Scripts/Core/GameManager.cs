@@ -65,6 +65,7 @@ public partial class GameManager : Node3D
 
     private float _telemetryTimer;
     private float _gameOverLockoutTimer;
+    private int _finalScore;
     private bool _prevSpacePressed;
     private bool _prevMousePressed;
 
@@ -105,8 +106,12 @@ public partial class GameManager : Node3D
         AddChild(WebServer);
 
         // 6. In-Game HUD
-        HUD = new InGameHUD { Name = "InGameHUD" };
-        AddChild(HUD);
+        HUD = GetNodeOrNull<InGameHUD>("InGameHUD")
+            ?? GD.Load<PackedScene>("res://Scenes/UI/HUD.tscn").Instantiate<InGameHUD>();
+        if (HUD.GetParent() == null)
+        {
+            AddChild(HUD);
+        }
 
         // Connect remote commands (marshaled to main thread via CallDeferred)
         UdpReceiver.OnRestartRequested += () => Callable.From(() =>
@@ -240,7 +245,7 @@ public partial class GameManager : Node3D
         // Update HUD
         HUD.UpdateHUD(
             State,
-            Score,
+            State == GameState.GameOver ? _finalScore : Score,
             DistanceTraveled,
             PlayerSpeed,
             Multiplier,
@@ -496,10 +501,10 @@ public partial class GameManager : Node3D
         _gameOverLockoutTimer = 0.6f;
         HorseController.SetCrashed(true);
 
-        int finalScore = (int)MathF.Max(Score, DistanceTraveled);
+        _finalScore = (int)MathF.Max(Score, DistanceTraveled);
         _leaderboardManager.RecordScore(
             PlayerName,
-            finalScore,
+            _finalScore,
             (int)DistanceTraveled,
             Difficulty.ToString().ToLowerInvariant(),
             ApplesCollected,
@@ -510,11 +515,11 @@ public partial class GameManager : Node3D
         );
 
         HUD.UpdateLeaderboard(_leaderboardManager.Entries, rankIndex, isNewRecord);
-        HUD.UpdateHUD(State, finalScore, DistanceTraveled, PlayerSpeed, Multiplier, MultiplierTimer, ApplesCollected, HorseshoesCollected, CountdownTimer);
+        HUD.UpdateHUD(State, _finalScore, DistanceTraveled, PlayerSpeed, Multiplier, MultiplierTimer, ApplesCollected, HorseshoesCollected, CountdownTimer);
         WebServer?.BroadcastLeaderboard(_leaderboardManager.Entries);
         PublishRoomState("GAMEOVER");
 
-        GD.Print($"[GameManager] CRASH! GAME OVER at {DistanceTraveled:F1}m! Final Score: {finalScore} (Seed: #{ActiveSeed}, Rank: {(rankIndex >= 0 ? $"#{rankIndex + 1}" : "unranked")}, NewRecord: {isNewRecord})");
+        GD.Print($"[GameManager] CRASH! GAME OVER at {DistanceTraveled:F1}m! Final Score: {_finalScore} (Seed: #{ActiveSeed}, Rank: {(rankIndex >= 0 ? $"#{rankIndex + 1}" : "unranked")}, NewRecord: {isNewRecord})");
     }
 
     private void PublishRoomState(string? stateOverride = null)

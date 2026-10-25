@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://v1vj7gmphmix" path="res://Scripts/Core/GameManager.cs" id="1_gm"]
 [ext_resource type="Script" uid="uid://bsdl4l7ughk88" path="res://Scripts/Camera/RunnerCamera.cs" id="2_rc"]
+[ext_resource type="PackedScene" uid="uid://c7x68u5b2q5q4" path="res://Scenes/UI/HUD.tscn" id="3_hud"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_01"]
 sky_top_color = Color(0.494118, 0.784314, 0.890196, 1)
@@ -46,3 +47,5 @@ directional_shadow_split_3 = 0.8
 transform = Transform3D(1, 0, 0, 0, 0.965926, 0.258819, 0, -0.258819, 0.965926, 0, 4.5, -6.5)
 current = true
 script = ExtResource("2_rc")
+
+[node name="InGameHUD" parent="." instance=ExtResource("3_hud")]
