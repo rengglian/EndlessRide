@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a"/>
+      <stop offset="50%" stop-color="#facc15"/>
+      <stop offset="100%" stop-color="#ca8a04"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="180" rx="16" fill="url(#bg)"/>
+  <!-- Horseshoe Icon -->
+  <g transform="translate(36, 40) scale(0.75)">
+    <path d="M 44 86 C 36 76 34 50 44 38 C 50 30 78 30 84 38 C 94 50 92 76 84 86 L 76 80 C 82 72 82 52 76 44 C 72 38 56 38 52 44 C 46 52 46 72 52 80 Z" fill="url(#gold)"/>
+    <rect x="42" y="84" width="12" height="8" rx="2" fill="#ca8a04"/>
+    <rect x="74" y="84" width="12" height="8" rx="2" fill="#ca8a04"/>
+  </g>
+  <!-- Title Typography -->
+  <text x="135" y="85" font-family="sans-serif" font-weight="900" font-size="28" fill="#f8fafc" letter-spacing="2">ENDLESS</text>
+  <text x="135" y="118" font-family="sans-serif" font-weight="900" font-size="28" fill="url(#gold)" letter-spacing="4">RIDE</text>
+  <text x="135" y="142" font-family="sans-serif" font-weight="600" font-size="12" fill="#38bdf8" letter-spacing="3">ARCADE CONSOLE</text>
+</svg>

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="24" fill="#1e293b"/>
+  <circle cx="64" cy="64" r="50" fill="#0f172a" stroke="#facc15" stroke-width="4"/>
+  <!-- Stylized Golden Horseshoe -->
+  <path d="M 44 86 C 36 76 34 50 44 38 C 50 30 78 30 84 38 C 94 50 92 76 84 86 L 76 80 C 82 72 82 52 76 44 C 72 38 56 38 52 44 C 46 52 46 72 52 80 Z" fill="#facc15"/>
+  <!-- Horseshoe Calks -->
+  <rect x="42" y="84" width="12" height="8" rx="2" fill="#eab308"/>
+  <rect x="74" y="84" width="12" height="8" rx="2" fill="#eab308"/>
+  <!-- Speed lines -->
+  <path d="M 24 50 L 34 50 M 20 64 L 32 64 M 26 78 L 36 78" stroke="#38bdf8" stroke-width="3" stroke-linecap="round"/>
+</svg>

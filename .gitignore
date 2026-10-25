@@ -29,7 +29,14 @@ Thumbs.db
 *.sln
 *.sw?
 
-# Environment and logs
+# Godot 4 & .NET artifacts
+godot/.godot/
+godot/bin/
+godot/obj/
+godot/builds/
+!godot/*.sln
+*.csproj.nuget.*
+
 .env
 .env.*
 !.env.example
