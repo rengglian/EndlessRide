@@ -131,6 +131,17 @@ public partial class GameManager : Node3D
             UdpReceiver.TareZero();
         }).CallDeferred();
 
+        WebServer.OnResetCalibrationCommand += () => Callable.From(() =>
+        {
+            UdpReceiver.ResetCalibration();
+        }).CallDeferred();
+
+        WebServer.OnToggleInvertCommand += () => Callable.From(() =>
+        {
+            UdpReceiver.InvertX = !UdpReceiver.InvertX;
+            GD.Print($"[GameManager] Hardware controller InvertX toggled: {UdpReceiver.InvertX}");
+        }).CallDeferred();
+
         WebServer.OnDifficultyChanged += presetStr => Callable.From(() =>
         {
             if (Enum.TryParse<Config.DifficultyPreset>(presetStr, true, out var preset))
@@ -219,6 +230,16 @@ public partial class GameManager : Node3D
         if (_telemetryTimer >= 0.05f)
         {
             _telemetryTimer = 0.0f;
+            var udp = UdpReceiver;
+            bool isHw = udp != null && udp.IsActive;
+            string source = isHw ? "atoms3" : "godot";
+            float rawSteer = isHw && udp != null ? udp.RawSteer : steer;
+            float calOffset = isHw && udp != null ? udp.CalOffset : 0.0f;
+            string deviceIp = isHw && udp != null ? udp.DeviceIp : (WebServer?.LastDeviceIp ?? string.Empty);
+            int hz = isHw && udp != null ? udp.Hz : 50;
+            int seq = isHw && udp != null ? udp.Seq : 0;
+            int button = isHw && udp != null ? udp.Button : 0;
+
             WebServer?.BroadcastTelemetry(
                 State.ToString().ToUpperInvariant(),
                 DistanceTraveled,
@@ -226,7 +247,14 @@ public partial class GameManager : Node3D
                 Score,
                 Multiplier,
                 steer,
-                Difficulty.ToString().ToLowerInvariant()
+                Difficulty.ToString().ToLowerInvariant(),
+                source,
+                rawSteer,
+                calOffset,
+                deviceIp,
+                hz,
+                seq,
+                button
             );
         }
     }

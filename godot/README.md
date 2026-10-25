@@ -228,5 +228,5 @@ adb connect <SHIELD_TV_IP>:5555
 
 # 3. Install & launch
 adb install -r godot/builds/android/EndlessRide.apk
-adb shell monkey -p com.antigravity.endlessride -c android.intent.category.LEANBACK_LAUNCHER 1
+adb shell monkey -p com.endlessride.game -c android.intent.category.LAUNCHER 1
 ```

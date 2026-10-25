@@ -890,6 +890,9 @@
       <button id="resetCalBtn" class="btn-reset-cal">
         Reset (0°)
       </button>
+      <button id="invertBtn" class="btn-reset-cal" style="background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.2);">
+        ⇄ Invert Steer
+      </button>
     </div>
 
     <!-- Sensitivity Slider -->
@@ -985,6 +988,7 @@
     const calOffsetDisplay = document.getElementById('calOffsetDisplay');
     const tareBtn = document.getElementById('tareBtn');
     const resetCalBtn = document.getElementById('resetCalBtn');
+    const invertBtn = document.getElementById('invertBtn');
     const sensitivitySlider = document.getElementById('sensitivitySlider');
     const sensitivityDisplay = document.getElementById('sensitivityDisplay');
 
@@ -1247,6 +1251,12 @@
       } else if (source === 'simulate') {
         controllerStatusBadge.textContent = `🟣 Simulation (${hz} Hz)`;
         controllerStatusBadge.className = 'controller-badge active-sim';
+      } else {
+        controllerStatusBadge.textContent = `⚪ Connected (${hz} Hz · Waiting for AtomS3)`;
+        controllerStatusBadge.className = 'controller-badge idle';
+        if (sensor.deviceIp) {
+          updateAtoms3Ip(sensor.deviceIp);
+        }
       }
 
       // 4. Button press indicator
@@ -1399,6 +1409,12 @@
     resetCalBtn.onclick = () => {
       sendWsMessage({ type: 'reset_calibration' });
     };
+
+    if (invertBtn) {
+      invertBtn.onclick = () => {
+        sendWsMessage({ type: 'toggle_invert' });
+      };
+    }
 
     // Sensitivity slider
     sensitivitySlider.oninput = () => {

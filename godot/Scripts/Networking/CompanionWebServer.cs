@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Net;
 using System.Net.WebSockets;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -27,6 +28,8 @@ public partial class CompanionWebServer : Node
     public event Action? OnPauseCommand;
     public event Action? OnResumeCommand;
     public event Action? OnTareCommand;
+    public event Action? OnResetCalibrationCommand;
+    public event Action? OnToggleInvertCommand;
     public event Action<string>? OnDifficultyChanged;
     public event Action<string>? OnPlayerNameChanged;
 
@@ -44,6 +47,7 @@ public partial class CompanionWebServer : Node
     private string _lastGameState = "START";
     private string _lastDifficulty = "standard";
     private string _lastPlayerName = "Rider 1";
+    public string LastDeviceIp { get; set; } = string.Empty;
     private IReadOnlyList<LeaderboardEntry>? _cachedLeaderboard;
 
     public override void _Ready()
@@ -54,18 +58,56 @@ public partial class CompanionWebServer : Node
 
     private void LoadStaticHtml()
     {
-        // Try reading public/remote.html from disk
-        string remotePath = ProjectSettings.GlobalizePath("res://../public/remote.html");
-        if (File.Exists(remotePath))
+        // 1. Try reading from embedded assembly resource (cross-platform, zero I/O dependency)
+        try
+        {
+            var asm = Assembly.GetExecutingAssembly();
+            using var stream = asm.GetManifestResourceStream("EndlessRide.remote.html");
+            if (stream != null)
+            {
+                using var reader = new StreamReader(stream);
+                _cachedRemoteHtml = reader.ReadToEnd();
+                GD.Print("[CompanionWebServer] Loaded remote.html from embedded assembly resource.");
+            }
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[CompanionWebServer] Embedded resource read error: {ex.Message}");
+        }
+
+        // 2. Try reading from Godot virtual filesystem (inside APK / PCK package)
+        if (string.IsNullOrEmpty(_cachedRemoteHtml) && Godot.FileAccess.FileExists("res://remote.html"))
         {
             try
             {
-                _cachedRemoteHtml = File.ReadAllText(remotePath);
-                GD.Print("[CompanionWebServer] Loaded remote.html from disk.");
+                using var fa = Godot.FileAccess.Open("res://remote.html", Godot.FileAccess.ModeFlags.Read);
+                if (fa != null)
+                {
+                    _cachedRemoteHtml = fa.GetAsText();
+                    GD.Print("[CompanionWebServer] Loaded remote.html from res://remote.html.");
+                }
             }
             catch (Exception ex)
             {
-                GD.PrintErr($"[CompanionWebServer] Could not read remote.html: {ex.Message}");
+                GD.PrintErr($"[CompanionWebServer] res://remote.html read error: {ex.Message}");
+            }
+        }
+
+        // 3. Fallback: Try reading public/remote.html from local disk (desktop dev)
+        if (string.IsNullOrEmpty(_cachedRemoteHtml))
+        {
+            string remotePath = ProjectSettings.GlobalizePath("res://../public/remote.html");
+            if (File.Exists(remotePath))
+            {
+                try
+                {
+                    _cachedRemoteHtml = File.ReadAllText(remotePath);
+                    GD.Print("[CompanionWebServer] Loaded remote.html from disk.");
+                }
+                catch (Exception ex)
+                {
+                    GD.PrintErr($"[CompanionWebServer] Could not read remote.html: {ex.Message}");
+                }
             }
         }
 
@@ -248,6 +290,14 @@ public partial class CompanionWebServer : Node
                     OnTareCommand?.Invoke();
                     break;
 
+                case "reset_calibration":
+                    OnResetCalibrationCommand?.Invoke();
+                    break;
+
+                case "toggle_invert":
+                    OnToggleInvertCommand?.Invoke();
+                    break;
+
                 case "set_config":
                     if (root.TryGetProperty("difficulty", out var diffProp))
                     {
@@ -321,7 +371,8 @@ public partial class CompanionWebServer : Node
             difficulty = _lastDifficulty,
             playerName = _lastPlayerName,
             players = new[] { _lastPlayerName, "Rider 1", "Rider 2", "Pro" },
-            leaderboard = _cachedLeaderboard ?? (object)Array.Empty<LeaderboardEntry>()
+            leaderboard = _cachedLeaderboard ?? (object)Array.Empty<LeaderboardEntry>(),
+            atoms3Ip = LastDeviceIp
         };
 
         string json = JsonSerializer.Serialize(payload, JsonOpts);
@@ -364,7 +415,8 @@ public partial class CompanionWebServer : Node
             difficulty = _lastDifficulty,
             playerName = _lastPlayerName,
             players = new[] { _lastPlayerName, "Rider 1", "Rider 2", "Pro" },
-            leaderboard = _cachedLeaderboard ?? (object)Array.Empty<LeaderboardEntry>()
+            leaderboard = _cachedLeaderboard ?? (object)Array.Empty<LeaderboardEntry>(),
+            atoms3Ip = LastDeviceIp
         };
 
         string json = JsonSerializer.Serialize(payload, JsonOpts);
@@ -372,19 +424,43 @@ public partial class CompanionWebServer : Node
         _ = SafeSendAsync(ws, bytes);
     }
 
-    public void BroadcastTelemetry(string gameState, float distance, float speed, float score, float multiplier, float steer, string difficulty = "")
+    public void BroadcastTelemetry(
+        string gameState,
+        float distance,
+        float speed,
+        float score,
+        float multiplier,
+        float steer,
+        string difficulty = "",
+        string source = "godot",
+        float rawSteer = 0.0f,
+        float calOffset = 0.0f,
+        string deviceIp = "",
+        int hz = 50,
+        int seq = 0,
+        int button = 0)
     {
+        if (!string.IsNullOrEmpty(deviceIp))
+        {
+            LastDeviceIp = deviceIp;
+        }
+
         if (_clientLocks.IsEmpty) return;
 
         var payload = new
         {
             type = "sensor",
-            source = "godot",
+            source = source,
             steer = MathF.Round(steer, 3),
-            rawSteer = MathF.Round(steer, 3),
-            rollDeg = MathF.Round(steer * 28.0f, 1),
+            rawSteer = MathF.Round(rawSteer, 3),
+            calOffset = MathF.Round(calOffset, 3),
+            rollDeg = MathF.Round(rawSteer * 28.0f, 1),
             state = gameState,
             difficulty = string.IsNullOrEmpty(difficulty) ? _lastDifficulty : difficulty,
+            deviceIp = string.IsNullOrEmpty(deviceIp) ? LastDeviceIp : deviceIp,
+            hz = hz,
+            seq = seq,
+            button = button,
             liveStats = new
             {
                 score = (int)score,
