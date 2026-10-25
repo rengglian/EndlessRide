@@ -55,6 +55,9 @@ public partial class GameManager : Node3D
     public CompanionWebServer WebServer { get; private set; } = null!;
     public InGameHUD HUD { get; private set; } = null!;
 
+    public LeaderboardManager Leaderboard => _leaderboardManager;
+    private readonly LeaderboardManager _leaderboardManager = new();
+
     private float _telemetryTimer;
 
     public override void _Ready()
@@ -108,6 +111,11 @@ public partial class GameManager : Node3D
             if (State is GameState.Start or GameState.GameOver) StartGame();
         }).CallDeferred();
 
+        WebServer.OnForceRestartCommand += () => Callable.From(() =>
+        {
+            StartGame();
+        }).CallDeferred();
+
         WebServer.OnPauseCommand += () => Callable.From(() =>
         {
             if (State == GameState.Running) State = GameState.Paused;
@@ -135,12 +143,15 @@ public partial class GameManager : Node3D
         {
             PlayerName = name;
             GD.Print($"[GameManager] Active rider profile: {PlayerName}");
-            WebServer?.BroadcastRoomState(State.ToString().ToUpperInvariant(), Difficulty.ToString().ToLowerInvariant(), PlayerName);
+            WebServer?.BroadcastRoomState(State.ToString().ToUpperInvariant(), Difficulty.ToString().ToLowerInvariant(), PlayerName, _leaderboardManager.Entries);
         }).CallDeferred();
 
         GD.Print("[GameManager] Initialized Endless Ride Engine (Full TV/Arcade Stack Active).");
         Camera.SnapToTarget(HorseController.GlobalPosition, Track.GetTangentAtDistance(0.0f));
-        WebServer?.BroadcastRoomState(State.ToString().ToUpperInvariant(), Difficulty.ToString().ToLowerInvariant(), PlayerName);
+
+        HUD.UpdateLeaderboard(_leaderboardManager.Entries);
+        WebServer?.BroadcastLeaderboard(_leaderboardManager.Entries);
+        WebServer?.BroadcastRoomState(State.ToString().ToUpperInvariant(), Difficulty.ToString().ToLowerInvariant(), PlayerName, _leaderboardManager.Entries);
     }
 
     public override void _PhysicsProcess(double delta)
@@ -152,7 +163,7 @@ public partial class GameManager : Node3D
         {
             case GameState.Start:
                 UpdateCameraOnly(steer, dt);
-                if (Input.IsActionJustPressed("ui_accept") || Input.IsKeyPressed(Key.Space))
+                if (Input.IsActionJustPressed("ui_accept") || Input.IsKeyPressed(Key.Space) || Input.IsMouseButtonPressed(MouseButton.Left))
                 {
                     StartGame();
                 }
@@ -166,7 +177,7 @@ public partial class GameManager : Node3D
                     State = GameState.Running;
                     HorseController.PlayGallopAnimation();
                     GD.Print("[GameManager] RACE STARTED!");
-                    WebServer?.BroadcastRoomState("RUNNING", Difficulty.ToString().ToLowerInvariant(), PlayerName);
+                    WebServer?.BroadcastRoomState("RUNNING", Difficulty.ToString().ToLowerInvariant(), PlayerName, _leaderboardManager.Entries);
                 }
                 break;
 
@@ -183,7 +194,7 @@ public partial class GameManager : Node3D
 
             case GameState.GameOver:
                 UpdateCameraOnly(0.0f, dt);
-                if (Input.IsActionJustPressed("ui_accept") || Input.IsKeyPressed(Key.Space))
+                if (Input.IsActionJustPressed("ui_accept") || Input.IsKeyPressed(Key.Space) || Input.IsMouseButtonPressed(MouseButton.Left))
                 {
                     StartGame();
                 }
@@ -325,7 +336,7 @@ public partial class GameManager : Node3D
             }
         }
         GD.Print($"[GameManager] Difficulty updated to: {Difficulty} ({config.Label}: {config.BaseSpeed}-{config.MaxSpeed} m/s)");
-        WebServer?.BroadcastRoomState(State.ToString().ToUpperInvariant(), Difficulty.ToString().ToLowerInvariant(), PlayerName);
+        WebServer?.BroadcastRoomState(State.ToString().ToUpperInvariant(), Difficulty.ToString().ToLowerInvariant(), PlayerName, _leaderboardManager.Entries);
     }
 
     public void StartGame()
@@ -350,7 +361,7 @@ public partial class GameManager : Node3D
 
         State = GameState.Countdown;
         GD.Print("[GameManager] Countdown initiated (3-2-1).");
-        WebServer?.BroadcastRoomState("COUNTDOWN", Difficulty.ToString().ToLowerInvariant(), PlayerName);
+        WebServer?.BroadcastRoomState("COUNTDOWN", Difficulty.ToString().ToLowerInvariant(), PlayerName, _leaderboardManager.Entries);
     }
 
     public void CollectApple()
@@ -376,7 +387,24 @@ public partial class GameManager : Node3D
         if (State == GameState.GameOver) return;
         State = GameState.GameOver;
         HorseController.SetCrashed(true);
-        GD.Print($"[GameManager] CRASH! GAME OVER at {DistanceTraveled:F1}m! Final Score: {Score:F0}");
-        WebServer?.BroadcastRoomState("GAMEOVER", Difficulty.ToString().ToLowerInvariant(), PlayerName);
+
+        int finalScore = (int)MathF.Max(Score, DistanceTraveled);
+        _leaderboardManager.RecordScore(
+            PlayerName,
+            finalScore,
+            (int)DistanceTraveled,
+            Difficulty.ToString().ToLowerInvariant(),
+            ApplesCollected,
+            HorseshoesCollected,
+            out bool isNewRecord,
+            out int rankIndex
+        );
+
+        HUD.UpdateLeaderboard(_leaderboardManager.Entries, rankIndex, isNewRecord);
+        HUD.UpdateHUD(State, finalScore, DistanceTraveled, PlayerSpeed, Multiplier, MultiplierTimer, ApplesCollected, HorseshoesCollected, CountdownTimer);
+        WebServer?.BroadcastLeaderboard(_leaderboardManager.Entries);
+        WebServer?.BroadcastRoomState("GAMEOVER", Difficulty.ToString().ToLowerInvariant(), PlayerName, _leaderboardManager.Entries);
+
+        GD.Print($"[GameManager] CRASH! GAME OVER at {DistanceTraveled:F1}m! Final Score: {finalScore} (Rank: {(rankIndex >= 0 ? $"#{rankIndex + 1}" : "unranked")}, NewRecord: {isNewRecord})");
     }
 }

@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Godot;
+using EndlessRide.Core;
 
 namespace EndlessRide.Networking;
 
@@ -22,20 +23,28 @@ public partial class CompanionWebServer : Node
     [Export] public int HttpPort { get; set; } = 8080;
 
     public event Action? OnStartOrRestartCommand;
+    public event Action? OnForceRestartCommand;
     public event Action? OnPauseCommand;
     public event Action? OnResumeCommand;
     public event Action? OnTareCommand;
     public event Action<string>? OnDifficultyChanged;
     public event Action<string>? OnPlayerNameChanged;
 
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false
+    };
+
     private HttpListener? _httpListener;
     private CancellationTokenSource? _cts;
-    private readonly ConcurrentDictionary<WebSocket, byte> _clients = new();
+    private readonly ConcurrentDictionary<WebSocket, SemaphoreSlim> _clientLocks = new();
 
     private string _cachedRemoteHtml = string.Empty;
     private string _lastGameState = "START";
     private string _lastDifficulty = "standard";
     private string _lastPlayerName = "Rider 1";
+    private IReadOnlyList<LeaderboardEntry>? _cachedLeaderboard;
 
     public override void _Ready()
     {
@@ -163,7 +172,7 @@ public partial class CompanionWebServer : Node
         }
 
         WebSocket ws = wsContext.WebSocket;
-        _clients.TryAdd(ws, 0);
+        _clientLocks.TryAdd(ws, new SemaphoreSlim(1, 1));
         GD.Print("[CompanionWebServer] Smartphone remote connected via WebSocket.");
 
         // Send current room state on initial connection
@@ -195,7 +204,10 @@ public partial class CompanionWebServer : Node
         }
         finally
         {
-            _clients.TryRemove(ws, out _);
+            if (_clientLocks.TryRemove(ws, out var sem))
+            {
+                sem.Dispose();
+            }
             ws.Dispose();
             GD.Print("[CompanionWebServer] Smartphone remote disconnected.");
         }
@@ -221,8 +233,10 @@ public partial class CompanionWebServer : Node
                     if (root.TryGetProperty("action", out var actionProp))
                     {
                         string action = actionProp.GetString() ?? string.Empty;
-                        if (action is "start_or_restart" or "restart" or "force_restart")
+                        if (action is "start_or_restart" or "restart")
                             OnStartOrRestartCommand?.Invoke();
+                        else if (action == "force_restart")
+                            OnForceRestartCommand?.Invoke();
                         else if (action == "pause")
                             OnPauseCommand?.Invoke();
                         else if (action == "resume")
@@ -259,13 +273,46 @@ public partial class CompanionWebServer : Node
         }
     }
 
-    public void BroadcastRoomState(string gameState, string difficulty, string playerName)
+    private async Task SafeSendAsync(WebSocket ws, byte[] bytes)
+    {
+        if (ws.State != WebSocketState.Open) return;
+        if (!_clientLocks.TryGetValue(ws, out var sem)) return;
+
+        bool entered = false;
+        try
+        {
+            entered = await sem.WaitAsync(100);
+            if (!entered) return;
+
+            if (ws.State == WebSocketState.Open)
+            {
+                await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+            }
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[CompanionWebServer] WebSocket send error: {ex.Message}");
+        }
+        finally
+        {
+            if (entered)
+            {
+                sem.Release();
+            }
+        }
+    }
+
+    public void BroadcastRoomState(string gameState, string difficulty, string playerName, IReadOnlyList<LeaderboardEntry>? leaderboard = null)
     {
         _lastGameState = gameState;
         _lastDifficulty = difficulty;
         _lastPlayerName = playerName;
+        if (leaderboard != null)
+        {
+            _cachedLeaderboard = leaderboard;
+        }
 
-        if (_clients.IsEmpty) return;
+        if (_clientLocks.IsEmpty) return;
 
         var payload = new
         {
@@ -273,19 +320,36 @@ public partial class CompanionWebServer : Node
             gameState = _lastGameState,
             difficulty = _lastDifficulty,
             playerName = _lastPlayerName,
-            players = new[] { _lastPlayerName, "Rider 1", "Rider 2", "Pro" }
+            players = new[] { _lastPlayerName, "Rider 1", "Rider 2", "Pro" },
+            leaderboard = _cachedLeaderboard ?? (object)Array.Empty<LeaderboardEntry>()
         };
 
-        string json = JsonSerializer.Serialize(payload);
+        string json = JsonSerializer.Serialize(payload, JsonOpts);
         byte[] bytes = Encoding.UTF8.GetBytes(json);
-        var segment = new ArraySegment<byte>(bytes);
 
-        foreach (var client in _clients.Keys)
+        foreach (var client in _clientLocks.Keys)
         {
-            if (client.State == WebSocketState.Open)
-            {
-                _ = client.SendAsync(segment, WebSocketMessageType.Text, true, CancellationToken.None);
-            }
+            _ = SafeSendAsync(client, bytes);
+        }
+    }
+
+    public void BroadcastLeaderboard(IReadOnlyList<LeaderboardEntry> leaderboard)
+    {
+        _cachedLeaderboard = leaderboard;
+        if (_clientLocks.IsEmpty) return;
+
+        var payload = new
+        {
+            type = "leaderboard",
+            leaderboard
+        };
+
+        string json = JsonSerializer.Serialize(payload, JsonOpts);
+        byte[] bytes = Encoding.UTF8.GetBytes(json);
+
+        foreach (var client in _clientLocks.Keys)
+        {
+            _ = SafeSendAsync(client, bytes);
         }
     }
 
@@ -299,17 +363,18 @@ public partial class CompanionWebServer : Node
             gameState = _lastGameState,
             difficulty = _lastDifficulty,
             playerName = _lastPlayerName,
-            players = new[] { _lastPlayerName, "Rider 1", "Rider 2", "Pro" }
+            players = new[] { _lastPlayerName, "Rider 1", "Rider 2", "Pro" },
+            leaderboard = _cachedLeaderboard ?? (object)Array.Empty<LeaderboardEntry>()
         };
 
-        string json = JsonSerializer.Serialize(payload);
+        string json = JsonSerializer.Serialize(payload, JsonOpts);
         byte[] bytes = Encoding.UTF8.GetBytes(json);
-        _ = ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+        _ = SafeSendAsync(ws, bytes);
     }
 
     public void BroadcastTelemetry(string gameState, float distance, float speed, float score, float multiplier, float steer, string difficulty = "")
     {
-        if (_clients.IsEmpty) return;
+        if (_clientLocks.IsEmpty) return;
 
         var payload = new
         {
@@ -329,16 +394,12 @@ public partial class CompanionWebServer : Node
             }
         };
 
-        string json = JsonSerializer.Serialize(payload);
+        string json = JsonSerializer.Serialize(payload, JsonOpts);
         byte[] bytes = Encoding.UTF8.GetBytes(json);
-        var segment = new ArraySegment<byte>(bytes);
 
-        foreach (var client in _clients.Keys)
+        foreach (var client in _clientLocks.Keys)
         {
-            if (client.State == WebSocketState.Open)
-            {
-                _ = client.SendAsync(segment, WebSocketMessageType.Text, true, CancellationToken.None);
-            }
+            _ = SafeSendAsync(client, bytes);
         }
     }
 
@@ -348,11 +409,15 @@ public partial class CompanionWebServer : Node
         _cts?.Dispose();
         _cts = null;
 
-        foreach (var client in _clients.Keys)
+        foreach (var client in _clientLocks.Keys)
         {
+            if (_clientLocks.TryRemove(client, out var sem))
+            {
+                sem.Dispose();
+            }
             try { client.Dispose(); } catch { }
         }
-        _clients.Clear();
+        _clientLocks.Clear();
 
         if (_httpListener != null)
         {

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Godot;
 using EndlessRide.Core;
 
@@ -6,7 +7,7 @@ namespace EndlessRide.UI;
 
 /// <summary>
 /// High-contrast CanvasLayer HUD displaying live speed, distance, score,
-/// dynamic multiplier bar, and game state prompts (Countdown, Pause, Game Over).
+/// dynamic multiplier bar, state modals, and post-crash arcade leaderboard.
 /// Ported from src/ui/HUD.ts.
 /// </summary>
 public partial class InGameHUD : CanvasLayer
@@ -19,9 +20,22 @@ public partial class InGameHUD : CanvasLayer
     private Label _applesLabel = null!;
     private Label _shoesLabel = null!;
 
-    private Control _centerModal = null!;
+    // Simple Center Modal (Start, Countdown, Pause)
+    private Control _simpleModal = null!;
     private Label _modalTitle = null!;
     private Label _modalSubtitle = null!;
+
+    // Dedicated Post-Crash Game Over & Leaderboard Panel
+    private PanelContainer _gameOverPanel = null!;
+    private Label _gameOverTitle = null!;
+    private Label _gameOverRecordBadge = null!;
+    private Label _gameOverStatsLabel = null!;
+    private VBoxContainer _leaderboardRowsBox = null!;
+    private Label _gameOverPrompt = null!;
+
+    private int _highlightRank = -1;
+    private bool _isNewRecord = false;
+    private IReadOnlyList<LeaderboardEntry>? _cachedLeaderboard;
 
     public override void _Ready()
     {
@@ -97,16 +111,16 @@ public partial class InGameHUD : CanvasLayer
         pickupsBox.AddChild(_shoesLabel);
         root.AddChild(pickupsBox);
 
-        // 3. Center Modal Overlay
-        _centerModal = new Control
+        // 3. Simple Center Modal Overlay (Start, Countdown, Pause)
+        _simpleModal = new Control
         {
             AnchorLeft = 0.5f,
             AnchorTop = 0.5f,
             AnchorRight = 0.5f,
             AnchorBottom = 0.5f,
-            OffsetLeft = -300,
+            OffsetLeft = -320,
             OffsetTop = -140,
-            OffsetRight = 300,
+            OffsetRight = 320,
             OffsetBottom = 140
         };
 
@@ -134,8 +148,210 @@ public partial class InGameHUD : CanvasLayer
 
         modalVBox.AddChild(_modalTitle);
         modalVBox.AddChild(_modalSubtitle);
-        _centerModal.AddChild(modalVBox);
-        root.AddChild(_centerModal);
+        _simpleModal.AddChild(modalVBox);
+        root.AddChild(_simpleModal);
+
+        // 4. Post-Crash Game Over & Leaderboard Card
+        BuildGameOverPanel(root);
+    }
+
+    private void BuildGameOverPanel(Control root)
+    {
+        _gameOverPanel = new PanelContainer
+        {
+            Name = "GameOverPanel",
+            AnchorLeft = 0.5f,
+            AnchorTop = 0.5f,
+            AnchorRight = 0.5f,
+            AnchorBottom = 0.5f,
+            OffsetLeft = -340,
+            OffsetTop = -250,
+            OffsetRight = 340,
+            OffsetBottom = 250,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            Visible = false
+        };
+
+        var panelStyle = new StyleBoxFlat
+        {
+            BgColor = new Color(0.06f, 0.09f, 0.16f, 0.94f),
+            CornerRadiusTopLeft = 16,
+            CornerRadiusTopRight = 16,
+            CornerRadiusBottomLeft = 16,
+            CornerRadiusBottomRight = 16,
+            BorderWidthLeft = 2,
+            BorderWidthTop = 2,
+            BorderWidthRight = 2,
+            BorderWidthBottom = 2,
+            BorderColor = new Color(1.0f, 1.0f, 1.0f, 0.12f),
+            ContentMarginLeft = 28,
+            ContentMarginRight = 28,
+            ContentMarginTop = 20,
+            ContentMarginBottom = 20
+        };
+        _gameOverPanel.AddThemeStyleboxOverride("panel", panelStyle);
+
+        var contentVBox = new VBoxContainer
+        {
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill
+        };
+        _gameOverPanel.AddChild(contentVBox);
+
+        // Header: GAME OVER
+        _gameOverTitle = new Label
+        {
+            Text = "GAME OVER",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Modulate = new Color(0.94f, 0.27f, 0.27f) // #EF4444
+        };
+        _gameOverTitle.AddThemeFontSizeOverride("font_size", 34);
+        contentVBox.AddChild(_gameOverTitle);
+
+        // New Record Badge
+        _gameOverRecordBadge = new Label
+        {
+            Text = "★ NEW ALL-TIME RECORD! ★",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Modulate = new Color(0.98f, 0.75f, 0.14f), // #FBBF24
+            Visible = false
+        };
+        _gameOverRecordBadge.AddThemeFontSizeOverride("font_size", 16);
+        contentVBox.AddChild(_gameOverRecordBadge);
+
+        // Run summary stats
+        _gameOverStatsLabel = new Label
+        {
+            Text = "Score: 0 pts  ·  Distance: 0 m  ·  🍎 0  ·  🧲 0",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Modulate = new Color(0.70f, 0.75f, 0.82f) // #94A3B8
+        };
+        _gameOverStatsLabel.AddThemeFontSizeOverride("font_size", 16);
+        contentVBox.AddChild(_gameOverStatsLabel);
+
+        contentVBox.AddChild(new HSeparator { Modulate = new Color(1, 1, 1, 0.2f) });
+
+        // Leaderboard Title
+        var lbHeaderBox = new HBoxContainer();
+        var lbTitle = new Label
+        {
+            Text = "🏆 TOP RIDERS",
+            Modulate = new Color(0.22f, 0.74f, 0.97f) // #38BDF8
+        };
+        lbTitle.AddThemeFontSizeOverride("font_size", 17);
+        lbHeaderBox.AddChild(lbTitle);
+        contentVBox.AddChild(lbHeaderBox);
+
+        // Leaderboard Rows Container
+        _leaderboardRowsBox = new VBoxContainer
+        {
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill
+        };
+        contentVBox.AddChild(_leaderboardRowsBox);
+
+        contentVBox.AddChild(new HSeparator { Modulate = new Color(1, 1, 1, 0.2f) });
+
+        // Action Prompt
+        _gameOverPrompt = new Label
+        {
+            Text = "PRESS SPACE OR TAP TO RIDE AGAIN",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Modulate = new Color(0.90f, 0.93f, 0.96f)
+        };
+        _gameOverPrompt.AddThemeFontSizeOverride("font_size", 18);
+        contentVBox.AddChild(_gameOverPrompt);
+
+        root.AddChild(_gameOverPanel);
+    }
+
+    /// <summary>
+    /// Updates the leaderboard table displayed on the Game Over screen.
+    /// </summary>
+    public void UpdateLeaderboard(IReadOnlyList<LeaderboardEntry> entries, int highlightRank = -1, bool isNewRecord = false)
+    {
+        _cachedLeaderboard = entries;
+        _highlightRank = highlightRank;
+        _isNewRecord = isNewRecord;
+
+        _gameOverRecordBadge.Visible = isNewRecord;
+
+        // Clear existing rows
+        foreach (Node child in _leaderboardRowsBox.GetChildren())
+        {
+            child.QueueFree();
+        }
+
+        // Display up to 5 top scores
+        int count = Math.Min(5, entries.Count);
+        for (int i = 0; i < count; i++)
+        {
+            var entry = entries[i];
+            bool isCurrentRun = (i == highlightRank);
+
+            var row = new HBoxContainer
+            {
+                SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+                CustomMinimumSize = new Vector2(0, 24)
+            };
+
+            // Medal / Rank
+            string medal = i switch
+            {
+                0 => "🥇",
+                1 => "🥈",
+                2 => "🥉",
+                _ => $" #{i + 1}"
+            };
+
+            var rankLabel = new Label
+            {
+                Text = medal,
+                CustomMinimumSize = new Vector2(36, 0)
+            };
+            rankLabel.AddThemeFontSizeOverride("font_size", 15);
+            row.AddChild(rankLabel);
+
+            // Name & Difficulty
+            string diffTag = string.IsNullOrEmpty(entry.Difficulty) ? "" : $" ({entry.Difficulty})";
+            var nameLabel = new Label
+            {
+                Text = $"{entry.Name}{diffTag}",
+                SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+                ClipText = true
+            };
+            nameLabel.AddThemeFontSizeOverride("font_size", 15);
+            row.AddChild(nameLabel);
+
+            // Score
+            var scoreLabel = new Label
+            {
+                Text = $"{entry.Score:N0} pts",
+                HorizontalAlignment = HorizontalAlignment.Right,
+                CustomMinimumSize = new Vector2(110, 0)
+            };
+            scoreLabel.AddThemeFontSizeOverride("font_size", 15);
+            row.AddChild(scoreLabel);
+
+            // Distance
+            var distLabel = new Label
+            {
+                Text = $"{entry.Distance:N0}m",
+                HorizontalAlignment = HorizontalAlignment.Right,
+                CustomMinimumSize = new Vector2(80, 0),
+                Modulate = new Color(0.65f, 0.70f, 0.78f)
+            };
+            distLabel.AddThemeFontSizeOverride("font_size", 15);
+            row.AddChild(distLabel);
+
+            // Highlight if current player's run
+            if (isCurrentRun)
+            {
+                nameLabel.Modulate = new Color(0.98f, 0.75f, 0.14f); // Golden glow
+                scoreLabel.Modulate = new Color(0.98f, 0.75f, 0.14f);
+            }
+
+            _leaderboardRowsBox.AddChild(row);
+        }
     }
 
     /// <summary>
@@ -165,32 +381,36 @@ public partial class InGameHUD : CanvasLayer
         switch (state)
         {
             case GameState.Start:
-                _centerModal.Visible = true;
+                _simpleModal.Visible = true;
+                _gameOverPanel.Visible = false;
                 _modalTitle.Text = "ENDLESS RIDE";
                 _modalSubtitle.Text = "PRESS SPACE / TAP TO START";
                 break;
 
             case GameState.Countdown:
-                _centerModal.Visible = true;
+                _simpleModal.Visible = true;
+                _gameOverPanel.Visible = false;
                 int count = (int)MathF.Ceiling(countdownTimer);
                 _modalTitle.Text = count > 0 ? $"{count}" : "GO!";
                 _modalSubtitle.Text = "STEER WITH A/D OR TILT REINS";
                 break;
 
             case GameState.Running:
-                _centerModal.Visible = false;
+                _simpleModal.Visible = false;
+                _gameOverPanel.Visible = false;
                 break;
 
             case GameState.Paused:
-                _centerModal.Visible = true;
+                _simpleModal.Visible = true;
+                _gameOverPanel.Visible = false;
                 _modalTitle.Text = "PAUSED";
                 _modalSubtitle.Text = "PRESS P / ESCAPE TO RESUME";
                 break;
 
             case GameState.GameOver:
-                _centerModal.Visible = true;
-                _modalTitle.Text = "GAME OVER";
-                _modalSubtitle.Text = $"DISTANCE: {distance:F0} m  •  SCORE: {score:F0}\nPRESS SPACE / TAP TO RIDE AGAIN";
+                _simpleModal.Visible = false;
+                _gameOverPanel.Visible = true;
+                _gameOverStatsLabel.Text = $"Score: {score:N0} pts  ·  Distance: {distance:N0} m  ·  🍎 {apples}  ·  🧲 {shoes}";
                 break;
         }
     }

@@ -922,6 +922,11 @@
         </tr>
       </tbody>
     </table>
+    <div style="margin-top: 14px;">
+      <button id="lbRestartBtn" class="btn-main btn-start" style="padding: 14px; font-size: 1.1rem;">
+        🔄 Ride Again
+      </button>
+    </div>
   </div>
 
   <!-- Host IP Modal -->
@@ -1102,6 +1107,8 @@
         renderRoomState(data);
       } else if (data.type === 'sensor') {
         renderSensorData(data);
+      } else if (data.type === 'leaderboard') {
+        renderLeaderboard(data.leaderboard || []);
       } else if (data.type === 'button') {
         triggerBtnAPress();
       }
@@ -1125,10 +1132,14 @@
           mainBtn.className = 'btn-main btn-pause';
           mainBtnIcon.textContent = '⏳';
           mainBtnText.textContent = 'Starting...';
-        } else {
-          // START or GAME_OVER
+        } else if (currentGameState === 'GAMEOVER') {
           mainBtn.className = 'btn-main btn-start';
-          mainBtnIcon.textContent = '🚀';
+          mainBtnIcon.textContent = '🔄';
+          mainBtnText.textContent = 'Ride Again';
+        } else {
+          // START
+          mainBtn.className = 'btn-main btn-start';
+          mainBtnIcon.textContent = '🏇';
           mainBtnText.textContent = 'Start 3-2-1 Ride';
         }
       }
@@ -1268,6 +1279,10 @@
           mainBtn.className = 'btn-main btn-pause';
           mainBtnIcon.textContent = '⏳';
           mainBtnText.textContent = 'Starting...';
+        } else if (currentGameState === 'GAMEOVER') {
+          mainBtn.className = 'btn-main btn-start';
+          mainBtnIcon.textContent = '🔄';
+          mainBtnText.textContent = 'Ride Again';
         } else {
           mainBtn.className = 'btn-main btn-start';
           mainBtnIcon.textContent = '🏇';
@@ -1293,7 +1308,7 @@
     }, 350);
 
     function renderLeaderboard(board) {
-      if (board.length === 0) {
+      if (!Array.isArray(board) || board.length === 0) {
         leaderboardBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 12px;">No scores recorded yet. Be the first!</td></tr>`;
         return;
       }
@@ -1305,13 +1320,17 @@
         else if (rank === 2) rankHtml = `<span class="rank-badge rank-2">🥈</span>`;
         else if (rank === 3) rankHtml = `<span class="rank-badge rank-3">🥉</span>`;
 
-        const diff = entry.difficulty || 'standard';
+        const name = entry.name || entry.Name || 'Rider';
+        const score = typeof entry.score === 'number' ? entry.score : (typeof entry.Score === 'number' ? entry.Score : 0);
+        const dist = typeof entry.distance === 'number' ? entry.distance : (typeof entry.Distance === 'number' ? entry.Distance : 0);
+        const diff = entry.difficulty || entry.Difficulty || 'standard';
+
         return `
           <tr>
             <td>${rankHtml}</td>
-            <td style="font-weight: 700; color: #f3f4f6;">${escapeHtml(entry.name || 'Rider')}</td>
-            <td style="text-align: right;" class="lb-score">${(entry.score || 0).toLocaleString()}</td>
-            <td style="text-align: right; color: var(--text-muted);">${(entry.distance || 0).toLocaleString()}m</td>
+            <td style="font-weight: 700; color: #f3f4f6;">${escapeHtml(name)}</td>
+            <td style="text-align: right;" class="lb-score">${score.toLocaleString()}</td>
+            <td style="text-align: right; color: var(--text-muted);">${dist.toLocaleString()}m</td>
             <td style="text-align: right;"><span class="lb-diff ${diff}">${diff}</span></td>
           </tr>
         `;
@@ -1334,6 +1353,13 @@
         sendWsMessage({ type: 'command', action: 'start_or_restart' });
       }
     };
+
+    const lbRestartBtn = document.getElementById('lbRestartBtn');
+    if (lbRestartBtn) {
+      lbRestartBtn.onclick = () => {
+        sendWsMessage({ type: 'command', action: 'start_or_restart' });
+      };
+    }
 
     quickRestartBtn.onclick = () => {
       sendWsMessage({ type: 'command', action: 'force_restart' });
