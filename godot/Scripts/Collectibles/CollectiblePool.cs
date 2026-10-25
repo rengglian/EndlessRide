@@ -22,7 +22,7 @@ public class CollectiblePool
     // Shared pre-allocated collectible geometries
     private readonly SphereMesh _appleMesh;
     private readonly CylinderMesh _stemMesh;
-    private readonly TorusMesh _horseshoeMesh;
+    private readonly Mesh _horseshoeMesh;
 
     public CollectiblePool(Node3D parent, int initialPoolSize = 16)
     {
@@ -55,14 +55,17 @@ public class CollectiblePool
         // Initialize shared collectible meshes once
         _appleMesh = new SphereMesh { Radius = 0.32f, Height = 0.60f, RadialSegments = 10, Rings = 8, Material = _appleMat };
         _stemMesh = new CylinderMesh { TopRadius = 0.025f, BottomRadius = 0.035f, Height = 0.16f, RadialSegments = 5, Material = _stemMat };
-        _horseshoeMesh = new TorusMesh
-        {
-            InnerRadius = 0.22f,
-            OuterRadius = 0.34f,
-            Rings = 12,
-            RingSegments = 8,
-            Material = _horseshoeMat
-        };
+        
+        // Load custom 3D low-poly golden horseshoe model with procedural torus fallback
+        _horseshoeMesh = LoadMeshFromGltf("res://Assets/Models/Horseshoe.glb")
+            ?? new TorusMesh
+            {
+                InnerRadius = 0.22f,
+                OuterRadius = 0.34f,
+                Rings = 12,
+                RingSegments = 8,
+                Material = _horseshoeMat
+            };
 
         CollectibleType[] types = { CollectibleType.Apple, CollectibleType.Horseshoe };
         foreach (var type in types)
@@ -123,8 +126,14 @@ public class CollectiblePool
         }
         else // Horseshoe
         {
-            var horseshoeInst = new MeshInstance3D { Mesh = _horseshoeMesh, Position = new Vector3(0, 0.65f, 0) };
-            horseshoeInst.RotationDegrees = new Vector3(80.0f, 0, 0);
+            var horseshoeInst = new MeshInstance3D
+            {
+                Mesh = _horseshoeMesh,
+                Position = new Vector3(0, 0.75f, 0),
+                MaterialOverride = _horseshoeMat
+            };
+            // Natural upright orientation
+            horseshoeInst.RotationDegrees = Vector3.Zero;
             visualGroup.AddChild(horseshoeInst);
         }
 
@@ -135,5 +144,20 @@ public class CollectiblePool
             Node = outerNode,
             VisualGroup = visualGroup
         };
+    }
+
+    private static Mesh? LoadMeshFromGltf(string resPath)
+    {
+        if (!ResourceLoader.Exists(resPath)) return null;
+        var scene = GD.Load<PackedScene>(resPath);
+        if (scene == null) return null;
+        var inst = scene.Instantiate<Node3D>();
+        if (inst == null) return null;
+
+        MeshInstance3D? meshInst = inst as MeshInstance3D;
+        meshInst ??= inst.FindChild("*", true, false) as MeshInstance3D;
+        var mesh = meshInst?.Mesh;
+        inst.QueueFree();
+        return mesh;
     }
 }

@@ -116,7 +116,7 @@ The horse, camera and collectible animation only move at the 60 Hz physics tick.
 | 23 | [remote.html#L1034](file:///home/rengglian/EndlessRide/godot/remote.html#L1034) | WS port is hard-coded to 8080 while `HttpPort` is `[Export]`-configurable. Use `window.location.port` when it's served by Godot. |
 | 24 | [ObstaclePool.cs#L125](file:///home/rengglian/EndlessRide/godot/Scripts/Obstacles/ObstaclePool.cs#L125) / [#L277](file:///home/rengglian/EndlessRide/godot/Scripts/Obstacles/ObstaclePool.cs#L277) (same in `CollectiblePool`) | **[RESOLVED]** Aligned `Id = id` with `node.Name` so IDs accurately match node hierarchy names. |
 | 25 | [HorseRunnerController.cs#L291-L305](file:///home/rengglian/EndlessRide/godot/Scripts/Entities/HorseRunnerController.cs#L291-L305) | `GlobalPosition` and then `GlobalBasis` are set separately, which means two transform propagations. Set `GlobalTransform` once. The variable `right` is actually the horse's left (+X); the maths is correct, but rename it for clarity. |
-| 26 | [CollectiblePool.cs#L110-L119](file:///home/rengglian/EndlessRide/godot/Scripts/Collectibles/CollectiblePool.cs#L110-L119) | The "horseshoe" is a full closed torus. Use a partial arc (custom mesh / CSG) so it reads as a horseshoe. |
+| 26 | [CollectiblePool.cs#L110-L119](file:///home/rengglian/EndlessRide/godot/Scripts/Collectibles/CollectiblePool.cs#L110-L119) | **[RESOLVED]** Modeled an authentic low-poly 3D Golden Horseshoe in Blender (`Horseshoe.blend` & `Horseshoe.glb`) with beveled U-arch, heel calks, toe clip, and nail studs, replacing the closed torus ring. |
 
 ---
 
