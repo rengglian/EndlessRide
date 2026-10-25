@@ -33,6 +33,9 @@ public partial class CompanionWebServer : Node
     private readonly ConcurrentDictionary<WebSocket, byte> _clients = new();
 
     private string _cachedRemoteHtml = string.Empty;
+    private string _lastGameState = "START";
+    private string _lastDifficulty = "standard";
+    private string _lastPlayerName = "Rider 1";
 
     public override void _Ready()
     {
@@ -163,6 +166,9 @@ public partial class CompanionWebServer : Node
         _clients.TryAdd(ws, 0);
         GD.Print("[CompanionWebServer] Smartphone remote connected via WebSocket.");
 
+        // Send current room state on initial connection
+        SendRoomStateToClient(ws);
+
         byte[] buffer = new byte[4096];
 
         try
@@ -179,7 +185,7 @@ public partial class CompanionWebServer : Node
                 if (result.MessageType == WebSocketMessageType.Text)
                 {
                     string json = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    HandleClientJson(json);
+                    HandleClientJson(json, ws);
                 }
             }
         }
@@ -195,7 +201,7 @@ public partial class CompanionWebServer : Node
         }
     }
 
-    private void HandleClientJson(string json)
+    private void HandleClientJson(string json, WebSocket ws)
     {
         try
         {
@@ -207,6 +213,10 @@ public partial class CompanionWebServer : Node
 
             switch (msgType)
             {
+                case "get_state":
+                    SendRoomStateToClient(ws);
+                    break;
+
                 case "command":
                     if (root.TryGetProperty("action", out var actionProp))
                     {
@@ -227,14 +237,18 @@ public partial class CompanionWebServer : Node
                 case "set_config":
                     if (root.TryGetProperty("difficulty", out var diffProp))
                     {
-                        OnDifficultyChanged?.Invoke(diffProp.GetString() ?? "standard");
+                        string diff = diffProp.GetString() ?? "standard";
+                        _lastDifficulty = diff.ToLowerInvariant();
+                        OnDifficultyChanged?.Invoke(_lastDifficulty);
                     }
                     break;
 
                 case "select_player":
                     if (root.TryGetProperty("playerName", out var nameProp))
                     {
-                        OnPlayerNameChanged?.Invoke(nameProp.GetString() ?? "Rider");
+                        string name = nameProp.GetString() ?? "Rider 1";
+                        _lastPlayerName = name;
+                        OnPlayerNameChanged?.Invoke(_lastPlayerName);
                     }
                     break;
             }
@@ -245,7 +259,55 @@ public partial class CompanionWebServer : Node
         }
     }
 
-    public void BroadcastTelemetry(string gameState, float distance, float speed, float score, float multiplier, float steer)
+    public void BroadcastRoomState(string gameState, string difficulty, string playerName)
+    {
+        _lastGameState = gameState;
+        _lastDifficulty = difficulty;
+        _lastPlayerName = playerName;
+
+        if (_clients.IsEmpty) return;
+
+        var payload = new
+        {
+            type = "room_state",
+            gameState = _lastGameState,
+            difficulty = _lastDifficulty,
+            playerName = _lastPlayerName,
+            players = new[] { _lastPlayerName, "Rider 1", "Rider 2", "Pro" }
+        };
+
+        string json = JsonSerializer.Serialize(payload);
+        byte[] bytes = Encoding.UTF8.GetBytes(json);
+        var segment = new ArraySegment<byte>(bytes);
+
+        foreach (var client in _clients.Keys)
+        {
+            if (client.State == WebSocketState.Open)
+            {
+                _ = client.SendAsync(segment, WebSocketMessageType.Text, true, CancellationToken.None);
+            }
+        }
+    }
+
+    private void SendRoomStateToClient(WebSocket ws)
+    {
+        if (ws.State != WebSocketState.Open) return;
+
+        var payload = new
+        {
+            type = "room_state",
+            gameState = _lastGameState,
+            difficulty = _lastDifficulty,
+            playerName = _lastPlayerName,
+            players = new[] { _lastPlayerName, "Rider 1", "Rider 2", "Pro" }
+        };
+
+        string json = JsonSerializer.Serialize(payload);
+        byte[] bytes = Encoding.UTF8.GetBytes(json);
+        _ = ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+    }
+
+    public void BroadcastTelemetry(string gameState, float distance, float speed, float score, float multiplier, float steer, string difficulty = "")
     {
         if (_clients.IsEmpty) return;
 
@@ -257,6 +319,7 @@ public partial class CompanionWebServer : Node
             rawSteer = MathF.Round(steer, 3),
             rollDeg = MathF.Round(steer * 28.0f, 1),
             state = gameState,
+            difficulty = string.IsNullOrEmpty(difficulty) ? _lastDifficulty : difficulty,
             liveStats = new
             {
                 score = (int)score,

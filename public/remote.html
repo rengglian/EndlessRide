@@ -1152,8 +1152,11 @@
       // 4. Difficulty
       if (data.difficulty) {
         for (const [k, el] of Object.entries(diffCards)) {
-          el.classList.toggle('active', k === data.difficulty);
+          el.classList.toggle('active', k.toLowerCase() === data.difficulty.toLowerCase());
         }
+      }
+      if (data.playerName && activePlayerDisplay) {
+        activePlayerDisplay.textContent = data.playerName;
       }
 
       // 5. Sensitivity & Tare
@@ -1243,6 +1246,39 @@
       // 5. Move Bubble Level (clamp steer between -1 and +1, map to 10% .. 90%)
       const pct = 50 + (steer * 40);
       levelBubble.style.left = `${Math.max(10, Math.min(90, pct))}%`;
+
+      // 6. Live HUD stats & Game State sync from Godot
+      if (sensor.liveStats) {
+        if (telemScore) telemScore.textContent = sensor.liveStats.score || 0;
+        if (telemDistance) telemDistance.textContent = `${sensor.liveStats.distance || 0}m`;
+        if (telemMultiplier) telemMultiplier.textContent = `${(sensor.liveStats.multiplier || 1.0).toFixed(1)}x`;
+      }
+      if (sensor.state && sensor.state !== currentGameState) {
+        currentGameState = sensor.state;
+        if (gameStateBadge) gameStateBadge.textContent = currentGameState;
+        if (currentGameState === 'RUNNING') {
+          mainBtn.className = 'btn-main btn-pause';
+          mainBtnIcon.textContent = '⏸️';
+          mainBtnText.textContent = 'Pause Ride';
+        } else if (currentGameState === 'PAUSED') {
+          mainBtn.className = 'btn-main btn-resume';
+          mainBtnIcon.textContent = '▶️';
+          mainBtnText.textContent = 'Resume Ride';
+        } else if (currentGameState === 'COUNTDOWN') {
+          mainBtn.className = 'btn-main btn-pause';
+          mainBtnIcon.textContent = '⏳';
+          mainBtnText.textContent = 'Starting...';
+        } else {
+          mainBtn.className = 'btn-main btn-start';
+          mainBtnIcon.textContent = '🏇';
+          mainBtnText.textContent = 'Start Run';
+        }
+      }
+      if (sensor.difficulty) {
+        for (const [k, el] of Object.entries(diffCards)) {
+          el.classList.toggle('active', k.toLowerCase() === sensor.difficulty.toLowerCase());
+        }
+      }
     }
 
     // 1-second Staleness Watchdog
@@ -1306,6 +1342,7 @@
     addRiderBtn.onclick = () => {
       const name = newRiderInput.value.trim();
       if (name) {
+        if (activePlayerDisplay) activePlayerDisplay.textContent = name;
         sendWsMessage({ type: 'select_player', playerName: name });
         newRiderInput.value = '';
       }
@@ -1320,6 +1357,10 @@
     // Difficulty selection
     for (const [key, el] of Object.entries(diffCards)) {
       el.onclick = () => {
+        // Optimistically update card UI immediately
+        for (const [k, card] of Object.entries(diffCards)) {
+          card.classList.toggle('active', k === key);
+        }
         sendWsMessage({ type: 'set_config', difficulty: key });
       };
     }

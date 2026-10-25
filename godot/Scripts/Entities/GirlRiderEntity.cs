@@ -41,7 +41,7 @@ public partial class GirlRiderEntity : Node3D
     private int _boneWristR = -1;
 
     private float _smoothedLateralVel;
-    private float _smoothedSpeed = 18.0f;
+    private float _smoothedSpeed = 9.0f;
 
     public override void _Ready()
     {
@@ -273,7 +273,7 @@ public partial class GirlRiderEntity : Node3D
         _spineRoot.Position = new Vector3(0, verticalBob + saddleElevationOffset, 0);
 
         // 2. Dynamic forward speed tuck (lean forward into the wind as speed increases)
-        float speedNorm = Math.Clamp((_smoothedSpeed - 14.0f) / 16.0f, 0.0f, 1.0f);
+        float speedNorm = Math.Clamp((_smoothedSpeed - 9.0f) / 15.0f, 0.0f, 1.0f);
         float tuckPitch = speedNorm * 0.28f + saddlePitchDelta * 0.45f;
 
         // 3. Reactive lateral dodge roll (lean body into sharp steering maneuvers)
@@ -321,7 +321,7 @@ public partial class GirlRiderEntity : Node3D
         Position = Vector3.Zero;
         Rotation = Vector3.Zero;
         _smoothedLateralVel = 0.0f;
-        _smoothedSpeed = 18.0f;
+        _smoothedSpeed = 9.0f;
         if (_spineRoot != null) _spineRoot.Position = Vector3.Zero;
         if (_torsoNode != null) _torsoNode.Rotation = Vector3.Zero;
         if (_headNode != null) _headNode.Rotation = Vector3.Zero;

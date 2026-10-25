@@ -36,11 +36,11 @@ public partial class RunnerCamera : Camera3D
         float steerInput = 0.0f)
     {
         float dt = (float.IsNaN(deltaTime) || deltaTime <= 0.0f) ? 0.0166f : MathF.Min(deltaTime, 0.05f);
-        float speed = float.IsNaN(horseSpeed) ? 18.0f : horseSpeed;
+        float speed = float.IsNaN(horseSpeed) ? 9.0f : horseSpeed;
         float steer = Math.Clamp(steerInput, -1.0f, 1.0f);
 
         // 1. Dynamic speed-based Field of View (FOV warp effect)
-        float targetFov = BaseFov + Math.Clamp((speed - 18.0f) * 0.9f, 0.0f, 14.0f);
+        float targetFov = BaseFov + Math.Clamp((speed - 9.0f) * 0.8f, 0.0f, 14.0f);
         if (MathF.Abs(Fov - targetFov) > 0.05f)
         {
             Fov += (targetFov - Fov) * (1.0f - MathF.Exp(-5.0f * dt));

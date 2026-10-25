@@ -8,8 +8,8 @@ namespace EndlessRide.Core;
 /// </summary>
 public static class Config
 {
-    public const float BaseSpeed = 18.0f;
-    public const float MaxSpeed = 30.0f;
+    public const float BaseSpeed = 9.0f;
+    public const float MaxSpeed = 24.0f;
     public const float SteerMaxSpeed = 12.0f;
     public const float MaxLateralOffset = 3.5f;
 
@@ -62,8 +62,8 @@ public static class Config
     public static readonly IReadOnlyDictionary<DifficultyPreset, DifficultyConfig> DifficultyPresets =
         new Dictionary<DifficultyPreset, DifficultyConfig>
         {
-            [DifficultyPreset.Relaxed] = new("Relaxed", 14.0f, 22.0f, 0.12f),
-            [DifficultyPreset.Standard] = new("Standard", 18.0f, 30.0f, 0.20f),
-            [DifficultyPreset.Pro] = new("Pro Rodeo", 22.0f, 35.0f, 0.30f)
+            [DifficultyPreset.Relaxed] = new("Relaxed", 7.0f, 18.0f, 0.35f),    // 25 km/h -> 65 km/h
+            [DifficultyPreset.Standard] = new("Standard", 9.0f, 24.0f, 0.45f),  // 32 km/h -> 86 km/h
+            [DifficultyPreset.Pro] = new("Pro Rodeo", 14.0f, 29.0f, 0.60f)     // 50 km/h -> 105 km/h
         };
 }

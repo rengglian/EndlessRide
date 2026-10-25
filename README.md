@@ -1,6 +1,8 @@
 # Endless Ride 🏇
 
-A high-performance, mobile-optimized 3D endless horse runner game built with **Three.js** and **TypeScript**. Featuring procedural banked track generation, custom GLSL terrain shader, multi-threaded Web Worker geometry streaming, analytical procedural gallop kinematics, physical motion controller hardware integration, and zero-allocation object pooling.
+A high-performance, mobile- and TV-optimized 3D endless horse runner game available in two implementations:
+1. **Godot 4 (.NET 10 / C#) Edition**: Living-room console edition targeting **NVIDIA Shield TV (Android TV / Tegra X1)** and **Linux Desktop**, featuring standalone embedded companion servers, hardware UDP tilt controllers, high-poly glTF assets, and GL Compatibility rendering. See [Godot 4 Documentation](file:///home/rengglian/EndlessRide/godot/README.md).
+2. **Three.js & TypeScript Edition**: Browser edition featuring procedural banked track generation, custom GLSL terrain shader, multi-threaded Web Worker geometry streaming, and mobile touch/sensor controls.
 
 ---
 

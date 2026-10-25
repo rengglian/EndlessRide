@@ -97,49 +97,50 @@ public partial class GameManager : Node3D
         HUD = new InGameHUD { Name = "InGameHUD" };
         AddChild(HUD);
 
-        // Connect remote commands
-        UdpReceiver.OnRestartRequested += () =>
+        // Connect remote commands (marshaled to main thread via CallDeferred)
+        UdpReceiver.OnRestartRequested += () => Callable.From(() =>
         {
             if (State is GameState.Start or GameState.GameOver) StartGame();
-        };
+        }).CallDeferred();
 
-        WebServer.OnStartOrRestartCommand += () =>
+        WebServer.OnStartOrRestartCommand += () => Callable.From(() =>
         {
             if (State is GameState.Start or GameState.GameOver) StartGame();
-        };
+        }).CallDeferred();
 
-        WebServer.OnPauseCommand += () =>
+        WebServer.OnPauseCommand += () => Callable.From(() =>
         {
             if (State == GameState.Running) State = GameState.Paused;
-        };
+        }).CallDeferred();
 
-        WebServer.OnResumeCommand += () =>
+        WebServer.OnResumeCommand += () => Callable.From(() =>
         {
             if (State == GameState.Paused) State = GameState.Running;
-        };
+        }).CallDeferred();
 
-        WebServer.OnTareCommand += () =>
+        WebServer.OnTareCommand += () => Callable.From(() =>
         {
             UdpReceiver.TareZero();
-        };
+        }).CallDeferred();
 
-        WebServer.OnDifficultyChanged += presetStr =>
+        WebServer.OnDifficultyChanged += presetStr => Callable.From(() =>
         {
             if (Enum.TryParse<Config.DifficultyPreset>(presetStr, true, out var preset))
             {
-                Difficulty = preset;
-                GD.Print($"[GameManager] Difficulty updated to: {Difficulty}");
+                SetDifficulty(preset);
             }
-        };
+        }).CallDeferred();
 
-        WebServer.OnPlayerNameChanged += name =>
+        WebServer.OnPlayerNameChanged += name => Callable.From(() =>
         {
             PlayerName = name;
             GD.Print($"[GameManager] Active rider profile: {PlayerName}");
-        };
+            WebServer?.BroadcastRoomState(State.ToString().ToUpperInvariant(), Difficulty.ToString().ToLowerInvariant(), PlayerName);
+        }).CallDeferred();
 
         GD.Print("[GameManager] Initialized Endless Ride Engine (Full TV/Arcade Stack Active).");
         Camera.SnapToTarget(HorseController.GlobalPosition, Track.GetTangentAtDistance(0.0f));
+        WebServer?.BroadcastRoomState(State.ToString().ToUpperInvariant(), Difficulty.ToString().ToLowerInvariant(), PlayerName);
     }
 
     public override void _PhysicsProcess(double delta)
@@ -163,7 +164,9 @@ public partial class GameManager : Node3D
                 if (CountdownTimer <= 0.0f)
                 {
                     State = GameState.Running;
+                    HorseController.PlayGallopAnimation();
                     GD.Print("[GameManager] RACE STARTED!");
+                    WebServer?.BroadcastRoomState("RUNNING", Difficulty.ToString().ToLowerInvariant(), PlayerName);
                 }
                 break;
 
@@ -205,13 +208,14 @@ public partial class GameManager : Node3D
         if (_telemetryTimer >= 0.05f)
         {
             _telemetryTimer = 0.0f;
-            WebServer.BroadcastTelemetry(
+            WebServer?.BroadcastTelemetry(
                 State.ToString().ToUpperInvariant(),
                 DistanceTraveled,
                 PlayerSpeed,
                 Score,
                 Multiplier,
-                steer
+                steer,
+                Difficulty.ToString().ToLowerInvariant()
             );
         }
     }
@@ -306,6 +310,24 @@ public partial class GameManager : Node3D
         Camera.UpdateCamera(HorseController.GlobalPosition, tangent, HorseController.Speed, dt, steer);
     }
 
+    public void SetDifficulty(Config.DifficultyPreset preset)
+    {
+        Difficulty = preset;
+        var config = Config.DifficultyPresets[Difficulty];
+        if (HorseController != null)
+        {
+            HorseController.BaseSpeed = config.BaseSpeed;
+            HorseController.MaxSpeed = config.MaxSpeed;
+            HorseController.AccelRate = config.AccelRate;
+            if (State == GameState.Running)
+            {
+                HorseController.Speed = Math.Clamp(HorseController.Speed, config.BaseSpeed, config.MaxSpeed);
+            }
+        }
+        GD.Print($"[GameManager] Difficulty updated to: {Difficulty} ({config.Label}: {config.BaseSpeed}-{config.MaxSpeed} m/s)");
+        WebServer?.BroadcastRoomState(State.ToString().ToUpperInvariant(), Difficulty.ToString().ToLowerInvariant(), PlayerName);
+    }
+
     public void StartGame()
     {
         Score = 0.0f;
@@ -328,6 +350,7 @@ public partial class GameManager : Node3D
 
         State = GameState.Countdown;
         GD.Print("[GameManager] Countdown initiated (3-2-1).");
+        WebServer?.BroadcastRoomState("COUNTDOWN", Difficulty.ToString().ToLowerInvariant(), PlayerName);
     }
 
     public void CollectApple()
@@ -354,5 +377,6 @@ public partial class GameManager : Node3D
         State = GameState.GameOver;
         HorseController.SetCrashed(true);
         GD.Print($"[GameManager] CRASH! GAME OVER at {DistanceTraveled:F1}m! Final Score: {Score:F0}");
+        WebServer?.BroadcastRoomState("GAMEOVER", Difficulty.ToString().ToLowerInvariant(), PlayerName);
     }
 }

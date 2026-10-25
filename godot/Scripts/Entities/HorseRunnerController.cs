@@ -20,7 +20,7 @@ public partial class HorseRunnerController : Node3D
 
     public float Distance { get; private set; }
     public float PrevDistance { get; private set; }
-    public float Speed { get; private set; }
+    public float Speed { get; set; }
     public float LateralOffset { get; private set; }
     public float LateralVelocity { get; private set; }
     public float GallopPhase { get; private set; }
@@ -147,9 +147,28 @@ public partial class HorseRunnerController : Node3D
         _headBitRight.Position = new Vector3(0.14f, 1.55f, 0.90f);
 
         _animPlayer = _gltfHorseModel.FindChild("AnimationPlayer", true, false) as AnimationPlayer;
-        if (_animPlayer != null && _animPlayer.HasAnimation("Gallop"))
+        if (_animPlayer != null)
         {
-            _animPlayer.Play("Gallop");
+            if (_animPlayer.HasAnimation("Gallop"))
+            {
+                var gallopAnim = _animPlayer.GetAnimation("Gallop");
+                if (gallopAnim != null) gallopAnim.LoopMode = Animation.LoopModeEnum.Linear;
+            }
+            if (_animPlayer.HasAnimation("Walk"))
+            {
+                var walkAnim = _animPlayer.GetAnimation("Walk");
+                if (walkAnim != null) walkAnim.LoopMode = Animation.LoopModeEnum.Linear;
+            }
+            if (_animPlayer.HasAnimation("Idle"))
+            {
+                var idleAnim = _animPlayer.GetAnimation("Idle");
+                if (idleAnim != null) idleAnim.LoopMode = Animation.LoopModeEnum.Linear;
+                _animPlayer.Play("Idle");
+            }
+            else if (_animPlayer.HasAnimation("Gallop"))
+            {
+                _animPlayer.Play("Gallop");
+            }
             GD.Print("[HorseRunnerController] Loaded high-fidelity animated glTF Horse model successfully.");
         }
     }
@@ -213,17 +232,17 @@ public partial class HorseRunnerController : Node3D
         // 3. 4-point raycast suspension & track alignment
         UpdateTransform();
 
-        // 4. Gallop cadence animation
-        float strideFreq = 4.4f * (Speed / 18.0f);
+        // 4. Stride cadence & gallop animation synchronization
+        float strideFreq = 2.4f + 2.0f * (Speed / 20.0f);
         GallopPhase += clampedDt * strideFreq * MathF.PI * 2.0f;
 
         if (_animPlayer != null && _animPlayer.HasAnimation("Gallop"))
         {
-            if (!_animPlayer.IsPlaying())
+            if (!_animPlayer.IsPlaying() || _animPlayer.CurrentAnimation != "Gallop")
             {
                 _animPlayer.Play("Gallop");
             }
-            _animPlayer.SpeedScale = (Speed / 18.0f) * 1.6f;
+            _animPlayer.SpeedScale = 0.8f + (Speed / 20.0f) * 0.9f;
         }
 
         float horsePitchDelta = MathF.Cos(GallopPhase) * 0.06f;
@@ -351,10 +370,7 @@ public partial class HorseRunnerController : Node3D
         {
             _gltfHorseModel.Rotation = Vector3.Zero;
             _gltfHorseModel.Position = new Vector3(0, 0, -0.72f * GltfScale);
-            if (_animPlayer != null && _animPlayer.HasAnimation("Gallop"))
-            {
-                _animPlayer.Play("Gallop");
-            }
+            PlayGallopAnimation();
         }
         if (_reinsMeshInst != null)
         {
@@ -363,5 +379,17 @@ public partial class HorseRunnerController : Node3D
         Rider.Reset();
         UpdateTransform();
         UpdateReins();
+    }
+
+    public void PlayGallopAnimation()
+    {
+        if (_animPlayer != null && _animPlayer.HasAnimation("Gallop"))
+        {
+            if (!_animPlayer.IsPlaying() || _animPlayer.CurrentAnimation != "Gallop")
+            {
+                _animPlayer.Play("Gallop");
+            }
+            _animPlayer.SpeedScale = 0.8f + (Speed / 20.0f) * 0.9f;
+        }
     }
 }
