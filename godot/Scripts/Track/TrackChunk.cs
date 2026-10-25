@@ -18,8 +18,6 @@ public partial class TrackChunk : Node3D
     public float ChunkLength { get; private set; }
 
     private MeshInstance3D _meshInstance = null!;
-    private StaticBody3D _staticBody = null!;
-    private CollisionShape3D _collisionShape = null!;
 
     // MultiMesh scenery instances
     private MultiMeshInstance3D _pineInstance = null!;
@@ -49,7 +47,9 @@ public partial class TrackChunk : Node3D
 
         MeshInstance3D? meshInst = inst as MeshInstance3D;
         meshInst ??= inst.FindChild("*", true, false) as MeshInstance3D;
-        return meshInst?.Mesh;
+        var mesh = meshInst?.Mesh;
+        inst.QueueFree();
+        return mesh;
     }
 
     private static void EnsureSharedResources()
@@ -81,11 +81,6 @@ public partial class TrackChunk : Node3D
             CastShadow = GeometryInstance3D.ShadowCastingSetting.Off
         };
         AddChild(_meshInstance);
-
-        _staticBody = new StaticBody3D { Name = "TrackCollider" };
-        _collisionShape = new CollisionShape3D { Name = "CollisionShape" };
-        _staticBody.AddChild(_collisionShape);
-        AddChild(_staticBody);
 
         _pineInstance = CreateMultiMeshInstance(s_pineMesh!);
         _oakInstance = CreateMultiMeshInstance(s_oakMesh!);
@@ -153,11 +148,6 @@ public partial class TrackChunk : Node3D
 
         _meshInstance!.Mesh = arrayMesh;
         _meshInstance.MaterialOverride = s_trackMaterial;
-
-        // Ground collider
-        var concaveShape = new ConcavePolygonShape3D();
-        concaveShape.SetFaces(arrayMesh.GetFaces());
-        _collisionShape!.Shape = concaveShape;
 
         PopulateScenery(spline);
     }

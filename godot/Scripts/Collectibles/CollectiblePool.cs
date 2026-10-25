@@ -19,6 +19,11 @@ public class CollectiblePool
     private readonly StandardMaterial3D _stemMat;
     private readonly StandardMaterial3D _horseshoeMat;
 
+    // Shared pre-allocated collectible geometries
+    private readonly SphereMesh _appleMesh;
+    private readonly CylinderMesh _stemMesh;
+    private readonly TorusMesh _horseshoeMesh;
+
     public CollectiblePool(Node3D parent, int initialPoolSize = 16)
     {
         _parent = parent;
@@ -45,6 +50,18 @@ public class CollectiblePool
             Metallic = 0.85f,
             EmissionEnabled = true,
             Emission = new Color(0.25f, 0.15f, 0.02f)
+        };
+
+        // Initialize shared collectible meshes once
+        _appleMesh = new SphereMesh { Radius = 0.32f, Height = 0.60f, RadialSegments = 10, Rings = 8, Material = _appleMat };
+        _stemMesh = new CylinderMesh { TopRadius = 0.025f, BottomRadius = 0.035f, Height = 0.16f, RadialSegments = 5, Material = _stemMat };
+        _horseshoeMesh = new TorusMesh
+        {
+            InnerRadius = 0.22f,
+            OuterRadius = 0.34f,
+            Rings = 12,
+            RingSegments = 8,
+            Material = _horseshoeMat
         };
 
         CollectibleType[] types = { CollectibleType.Apple, CollectibleType.Horseshoe };
@@ -88,41 +105,32 @@ public class CollectiblePool
 
     private CollectibleEntity CreateEntity(CollectibleType type)
     {
-        var outerNode = new Node3D { Name = $"Collectible_{type}_{_nextId++}" };
+        int id = _nextId++;
+        var outerNode = new Node3D { Name = $"Collectible_{type}_{id}" };
         var visualGroup = new Node3D { Name = "VisualGroup" };
         outerNode.AddChild(visualGroup);
 
         if (type == CollectibleType.Apple)
         {
             // Apple body
-            var appleMesh = new SphereMesh { Radius = 0.32f, Height = 0.60f, RadialSegments = 10, Rings = 8, Material = _appleMat };
-            var appleInst = new MeshInstance3D { Mesh = appleMesh, Position = new Vector3(0, 0.65f, 0) };
+            var appleInst = new MeshInstance3D { Mesh = _appleMesh, Position = new Vector3(0, 0.65f, 0) };
             visualGroup.AddChild(appleInst);
 
             // Stem
-            var stemMesh = new CylinderMesh { TopRadius = 0.025f, BottomRadius = 0.035f, Height = 0.16f, RadialSegments = 5, Material = _stemMat };
-            var stemInst = new MeshInstance3D { Mesh = stemMesh, Position = new Vector3(0, 0.98f, 0) };
+            var stemInst = new MeshInstance3D { Mesh = _stemMesh, Position = new Vector3(0, 0.98f, 0) };
             stemInst.RotationDegrees = new Vector3(0, 0, -15.0f);
             visualGroup.AddChild(stemInst);
         }
         else // Horseshoe
         {
-            var horseshoeMesh = new TorusMesh
-            {
-                InnerRadius = 0.22f,
-                OuterRadius = 0.34f,
-                Rings = 12,
-                RingSegments = 8,
-                Material = _horseshoeMat
-            };
-            var horseshoeInst = new MeshInstance3D { Mesh = horseshoeMesh, Position = new Vector3(0, 0.65f, 0) };
+            var horseshoeInst = new MeshInstance3D { Mesh = _horseshoeMesh, Position = new Vector3(0, 0.65f, 0) };
             horseshoeInst.RotationDegrees = new Vector3(80.0f, 0, 0);
             visualGroup.AddChild(horseshoeInst);
         }
 
         return new CollectibleEntity
         {
-            Id = _nextId,
+            Id = id,
             Type = type,
             Node = outerNode,
             VisualGroup = visualGroup
