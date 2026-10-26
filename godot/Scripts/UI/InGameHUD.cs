@@ -214,9 +214,8 @@ public partial class InGameHUD : CanvasLayer
                 Text = $"{entry.Distance:N0}m",
                 HorizontalAlignment = HorizontalAlignment.Right,
                 CustomMinimumSize = new Vector2(90, 0),
-                Modulate = new Color(0.65f, 0.70f, 0.78f)
+                ThemeTypeVariation = "Subtle"
             };
-            distLabel.AddThemeFontSizeOverride("font_size", 18);
             row.AddChild(distLabel);
 
             // Highlight if current player's run

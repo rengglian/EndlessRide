@@ -26,6 +26,10 @@ window/stretch/aspect="expand"
 
 project/assembly_name="EndlessRide"
 
+[gui]
+
+theme/custom="res://Assets/Themes/main_theme.tres"
+
 [input_devices]
 
 pointing/emulate_touch_from_mouse=true
