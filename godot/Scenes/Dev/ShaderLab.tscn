@@ -1,0 +1,168 @@
+[gd_scene format=3 uid="uid://d3u4s7w8lay01"]
+
+[ext_resource type="Script" uid="uid://dnt4ow0o7bfjh" path="res://Scripts/Dev/ShaderLab.cs" id="1_sl"]
+[ext_resource type="Script" uid="uid://wmjhevs0kcmk" path="res://Scripts/Dev/TurntableCamera.cs" id="2_cam"]
+[ext_resource type="Material" path="res://Shaders/mat_collectible_gold.tres" id="3_gold"]
+[ext_resource type="Material" path="res://Shaders/mat_collectible_apple.tres" id="4_apple"]
+[ext_resource type="PackedScene" uid="uid://b3oo6kcjlbxiv" path="res://Assets/Models/Horseshoe.glb" id="5_shoe"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_01"]
+sky_top_color = Color(0.494118, 0.784314, 0.890196, 1)
+sky_horizon_color = Color(0.760784, 0.894118, 0.937255, 1)
+ground_bottom_color = Color(0.15, 0.16, 0.2, 1)
+ground_horizon_color = Color(0.72, 0.84, 0.88, 1)
+
+[sub_resource type="Sky" id="Sky_01"]
+sky_material = SubResource("ProceduralSkyMaterial_01")
+
+[sub_resource type="Environment" id="Environment_01"]
+background_mode = 2
+sky = SubResource("Sky_01")
+ambient_light_source = 2
+ambient_light_color = Color(0.65, 0.72, 0.85, 1)
+ambient_light_energy = 0.85
+tonemap_mode = 3
+tonemap_exposure = 1.05
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_pedestal"]
+albedo_color = Color(0.14, 0.16, 0.22, 1)
+metallic = 0.1
+roughness = 0.85
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_pedestal"]
+material = SubResource("StandardMaterial3D_pedestal")
+top_radius = 2.4
+bottom_radius = 2.6
+height = 0.2
+radial_segments = 48
+
+[sub_resource type="SphereMesh" id="SphereMesh_apple"]
+radius = 0.32
+height = 0.6
+radial_segments = 24
+rings = 16
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_stem"]
+albedo_color = Color(0.36, 0.23, 0.13, 1)
+roughness = 0.8
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_stem"]
+material = SubResource("StandardMaterial3D_stem")
+top_radius = 0.025
+bottom_radius = 0.035
+height = 0.16
+radial_segments = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
+bg_color = Color(0.08, 0.09, 0.14, 0.88)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+shadow_color = Color(0, 0, 0, 0.35)
+shadow_size = 8
+
+[node name="ShaderLab" type="Node3D" unique_id=343541425 node_paths=PackedStringArray("WorldEnv", "SunLight", "StatusLabel")]
+script = ExtResource("1_sl")
+GoldMaterial = ExtResource("3_gold")
+AppleMaterial = ExtResource("4_apple")
+WorldEnv = NodePath("WorldEnvironment")
+SunLight = NodePath("DirectionalLight3D")
+StatusLabel = NodePath("UI/Control/PanelContainer/MarginContainer/VBoxContainer/StatusLabel")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1221821775]
+environment = SubResource("Environment_01")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1533205913]
+transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 10, 0)
+light_color = Color(1, 0.97, 0.9, 1)
+light_energy = 1.15
+shadow_enabled = true
+directional_shadow_max_distance = 25.0
+
+[node name="TurntableCamera" type="Camera3D" parent="." unique_id=1008310630]
+transform = Transform3D(1, 0, 0, 0, 0.965926, 0.258819, 0, -0.258819, 0.965926, 0, 1.8, 3.2)
+current = true
+script = ExtResource("2_cam")
+
+[node name="Pedestal" type="MeshInstance3D" parent="." unique_id=582535593]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
+mesh = SubResource("CylinderMesh_pedestal")
+
+[node name="HorseshoeAnchor" type="Node3D" parent="." unique_id=1682492883]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 0.75, 0)
+
+[node name="HorseshoeModel" parent="HorseshoeAnchor" unique_id=1291440120 instance=ExtResource("5_shoe")]
+
+[node name="AppleAnchor" type="Node3D" parent="." unique_id=372267684]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.65, 0)
+
+[node name="AppleBody" type="MeshInstance3D" parent="AppleAnchor" unique_id=1821124322]
+material_override = ExtResource("4_apple")
+mesh = SubResource("SphereMesh_apple")
+
+[node name="AppleStem" type="MeshInstance3D" parent="AppleAnchor" unique_id=40619581]
+transform = Transform3D(0.965926, 0.258819, 0, -0.258819, 0.965926, 0, 0, 0, 1, 0, 0.33, 0)
+mesh = SubResource("CylinderMesh_stem")
+
+[node name="UI" type="CanvasLayer" parent="." unique_id=979949136]
+
+[node name="Control" type="Control" parent="UI" unique_id=728579710]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -22.0
+offset_top = -289.0
+offset_right = -22.0
+offset_bottom = -289.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="PanelContainer" type="PanelContainer" parent="UI/Control" unique_id=1257235981]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = -285.0
+offset_right = 340.0
+offset_bottom = -20.0
+grow_vertical = 0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="MarginContainer" type="MarginContainer" parent="UI/Control/PanelContainer" unique_id=242490174]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="VBoxContainer" type="VBoxContainer" parent="UI/Control/PanelContainer/MarginContainer" unique_id=1873360979]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="TitleLabel" type="Label" parent="UI/Control/PanelContainer/MarginContainer/VBoxContainer" unique_id=454215971]
+layout_mode = 2
+theme_type_variation = &"HeaderMedium"
+text = "SHADER LAB"
+
+[node name="SubtitleLabel" type="Label" parent="UI/Control/PanelContainer/MarginContainer/VBoxContainer" unique_id=978481558]
+layout_mode = 2
+text = "Collectible Effects Inspector"
+
+[node name="HSeparator" type="HSeparator" parent="UI/Control/PanelContainer/MarginContainer/VBoxContainer" unique_id=470478423]
+layout_mode = 2
+
+[node name="StatusLabel" type="Label" parent="UI/Control/PanelContainer/MarginContainer/VBoxContainer" unique_id=1320602168]
+layout_mode = 2
+text = "[1] Sheen: ON
+[2] Rim Glow: ON
+[3] Sparkles: ON
+[4] Bob / Hover: ON
+[C] Lighting: Day (Crisp)
+
+[LMB Drag] Orbit  |  [Wheel] Zoom
+[Space] Pause Orbit  |  [R] Reset View"

@@ -15,9 +15,9 @@ public class CollectiblePool
     private readonly Dictionary<CollectibleType, Stack<CollectibleEntity>> _pools = new();
     private int _nextId;
 
-    private readonly StandardMaterial3D _appleMat;
+    private readonly Material _appleMat;
     private readonly StandardMaterial3D _stemMat;
-    private readonly StandardMaterial3D _horseshoeMat;
+    private readonly Material _horseshoeMat;
 
     // Shared pre-allocated collectible geometries
     private readonly SphereMesh _appleMesh;
@@ -28,14 +28,15 @@ public class CollectiblePool
     {
         _parent = parent;
 
-        _appleMat = new StandardMaterial3D
-        {
-            AlbedoColor = new Color(0.93f, 0.20f, 0.20f),
-            Roughness = 0.25f,
-            Metallic = 0.08f,
-            EmissionEnabled = true,
-            Emission = new Color(0.20f, 0.02f, 0.02f)
-        };
+        _appleMat = GD.Load<Material>("res://Shaders/mat_collectible_apple.tres")
+            ?? new StandardMaterial3D
+            {
+                AlbedoColor = new Color(0.93f, 0.20f, 0.20f),
+                Roughness = 0.25f,
+                Metallic = 0.08f,
+                EmissionEnabled = true,
+                Emission = new Color(0.20f, 0.02f, 0.02f)
+            };
 
         _stemMat = new StandardMaterial3D
         {
@@ -43,14 +44,15 @@ public class CollectiblePool
             Roughness = 0.8f
         };
 
-        _horseshoeMat = new StandardMaterial3D
-        {
-            AlbedoColor = new Color(0.98f, 0.80f, 0.08f),
-            Roughness = 0.20f,
-            Metallic = 0.85f,
-            EmissionEnabled = true,
-            Emission = new Color(0.25f, 0.15f, 0.02f)
-        };
+        _horseshoeMat = GD.Load<Material>("res://Shaders/mat_collectible_gold.tres")
+            ?? new StandardMaterial3D
+            {
+                AlbedoColor = new Color(0.98f, 0.80f, 0.08f),
+                Roughness = 0.20f,
+                Metallic = 0.85f,
+                EmissionEnabled = true,
+                Emission = new Color(0.25f, 0.15f, 0.02f)
+            };
 
         // Initialize shared collectible meshes once
         _appleMesh = new SphereMesh { Radius = 0.32f, Height = 0.60f, RadialSegments = 10, Rings = 8, Material = _appleMat };
@@ -116,7 +118,12 @@ public class CollectiblePool
         if (type == CollectibleType.Apple)
         {
             // Apple body
-            var appleInst = new MeshInstance3D { Mesh = _appleMesh, Position = new Vector3(0, 0.65f, 0) };
+            var appleInst = new MeshInstance3D
+            {
+                Mesh = _appleMesh,
+                Position = new Vector3(0, 0.65f, 0),
+                MaterialOverride = _appleMat
+            };
             visualGroup.AddChild(appleInst);
 
             // Stem

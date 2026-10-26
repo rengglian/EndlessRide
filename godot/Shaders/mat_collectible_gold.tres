@@ -1,0 +1,30 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://dvug7ayiwwk64"]
+
+[ext_resource type="Shader" uid="uid://cjkw56qwbxoem" path="res://Shaders/collectible_shiny.gdshader" id="1_shader"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_shader")
+shader_parameter/base_color = Color(0.98, 0.82, 0.12, 1)
+shader_parameter/metallic = 0.85
+shader_parameter/roughness = 0.18
+shader_parameter/enable_sheen = false
+shader_parameter/shine_color = Color(1, 1, 1, 1)
+shader_parameter/shine_speed = 1.4
+shader_parameter/shine_width = 0.22
+shader_parameter/shine_frequency = 2.8
+shader_parameter/shine_intensity = 1.8
+shader_parameter/enable_rim = true
+shader_parameter/rim_color = Color(1, 0.95, 0.6, 1)
+shader_parameter/rim_power = 3.2
+shader_parameter/rim_intensity = 1.2
+shader_parameter/enable_sparkles = true
+shader_parameter/sparkle_color = Color(1, 1, 1, 1)
+shader_parameter/sparkle_intensity = 30.0
+shader_parameter/sparkle_size = 0.28
+shader_parameter/sparkle_speed = 6.0
+shader_parameter/sparkle_density = 14.0
+shader_parameter/sparkle_threshold = 0.65
+shader_parameter/enable_hover = false
+shader_parameter/hover_speed = 2.2
+shader_parameter/hover_height = 0.04
