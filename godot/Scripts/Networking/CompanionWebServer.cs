@@ -52,6 +52,74 @@ public partial class CompanionWebServer : Node
     public string LastDeviceIp { get; set; } = string.Empty;
     private IReadOnlyList<LeaderboardEntry>? _cachedLeaderboard;
 
+    /// <summary>
+    /// Gets the companion app URL on the local LAN network (e.g. http://192.168.1.100:8080/remote).
+    /// </summary>
+    public string GetCompanionUrl()
+    {
+        string ip = GetLocalNetworkIp();
+        return $"http://{ip}:{HttpPort}/remote";
+    }
+
+    /// <summary>
+    /// Default companion URL helper when WebServer node is not directly accessible.
+    /// </summary>
+    public static string GetDefaultCompanionUrl(int port = 8080)
+    {
+        string ip = GetLocalNetworkIp();
+        return $"http://{ip}:{port}/remote";
+    }
+
+    /// <summary>
+    /// Discovers the active LAN IPv4 address (e.g., Wi-Fi or Ethernet on home network),
+    /// falling back to Godot IP addresses or localhost.
+    /// </summary>
+    public static string GetLocalNetworkIp()
+    {
+        // 1. Try .NET NetworkInterface to find an active Wi-Fi or Ethernet IPv4 address
+        try
+        {
+            var interfaces = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces();
+            foreach (var ni in interfaces)
+            {
+                if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up)
+                    continue;
+                if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
+                    continue;
+
+                var props = ni.GetIPProperties();
+                foreach (var addr in props.UnicastAddresses)
+                {
+                    if (addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    {
+                        string ip = addr.Address.ToString();
+                        if (!ip.StartsWith("127.") && !ip.StartsWith("169.254."))
+                        {
+                            return ip;
+                        }
+                    }
+                }
+            }
+        }
+        catch { }
+
+        // 2. Fallback to Godot's IP.GetLocalAddresses()
+        try
+        {
+            var addrs = Godot.IP.GetLocalAddresses();
+            foreach (var a in addrs)
+            {
+                if (!a.Contains(':') && !a.StartsWith("127.") && !a.StartsWith("169.254."))
+                {
+                    return a;
+                }
+            }
+        }
+        catch { }
+
+        return "localhost";
+    }
+
     public override void _Ready()
     {
         LoadStaticHtml();

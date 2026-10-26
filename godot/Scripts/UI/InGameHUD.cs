@@ -33,6 +33,13 @@ public partial class InGameHUD : CanvasLayer
     [Export] public VBoxContainer LeaderboardRowsBox { get; set; } = null!;
     [Export] public Label GameOverPrompt { get; set; } = null!;
 
+    // Lower-Left Companion QR & URL Card
+    [Export] public Control? CompanionCard { get; set; }
+    [Export] public TextureRect? CompanionQrRect { get; set; }
+    [Export] public Label? CompanionUrlLabel { get; set; }
+
+    private string _companionUrl = string.Empty;
+
     // Cached telemetry to eliminate per-frame string allocations
     private int _lastScore = -1;
     private int _lastDistance = -1;
@@ -66,6 +73,56 @@ public partial class InGameHUD : CanvasLayer
         GameOverStatsLabel ??= GetNodeOrNull<Label>("HUD_Root/GameOverPanel/ContentVBox/SummaryStatsLabel")!;
         LeaderboardRowsBox ??= GetNodeOrNull<VBoxContainer>("HUD_Root/GameOverPanel/ContentVBox/LeaderboardRows")!;
         GameOverPrompt ??= GetNodeOrNull<Label>("HUD_Root/GameOverPanel/ContentVBox/GameOverPrompt")!;
+
+        // Companion Card resolution & interaction
+        CompanionCard ??= GetNodeOrNull<Control>("HUD_Root/CompanionCard");
+        CompanionQrRect ??= GetNodeOrNull<TextureRect>("HUD_Root/CompanionCard/HBox/CompanionQrRect");
+        CompanionUrlLabel ??= GetNodeOrNull<Label>("HUD_Root/CompanionCard/HBox/CompanionInfoBox/CompanionUrlLabel");
+
+        if (CompanionCard != null)
+        {
+            CompanionCard.GuiInput += (InputEvent @event) =>
+            {
+                if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
+                {
+                    if (!string.IsNullOrEmpty(_companionUrl))
+                    {
+                        OS.ShellOpen(_companionUrl);
+                    }
+                }
+            };
+        }
+
+        if (string.IsNullOrEmpty(_companionUrl))
+        {
+            SetCompanionUrl(EndlessRide.Networking.CompanionWebServer.GetDefaultCompanionUrl());
+        }
+    }
+
+    /// <summary>
+    /// Updates the companion URL displayed in the HUD and regenerates the QR code texture.
+    /// </summary>
+    public void SetCompanionUrl(string url)
+    {
+        if (string.IsNullOrEmpty(url)) return;
+        _companionUrl = url;
+
+        if (CompanionUrlLabel != null)
+        {
+            CompanionUrlLabel.Text = url;
+        }
+
+        if (CompanionQrRect != null)
+        {
+            try
+            {
+                CompanionQrRect.Texture = QrCodeGenerator.GenerateTexture(url, scale: 4, border: 2);
+            }
+            catch (Exception ex)
+            {
+                GD.PrintErr($"[InGameHUD] Failed to generate QR texture for '{url}': {ex.Message}");
+            }
+        }
     }
 
     public override void _Process(double delta)

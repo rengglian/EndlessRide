@@ -113,6 +113,8 @@ public partial class GameManager : Node3D
             AddChild(HUD);
         }
 
+        HUD.SetCompanionUrl(WebServer.GetCompanionUrl());
+
         // Connect remote commands (marshaled to main thread via CallDeferred)
         UdpReceiver.OnRestartRequested += () => Callable.From(() =>
         {
