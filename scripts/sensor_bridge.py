@@ -50,6 +50,13 @@ filtered_steer = 0.0
 last_atoms3_time = 0.0
 last_restart_state = 0
 
+# AtomS3 Sensor Fusion State
+atoms3_fused_roll_deg = 0.0
+atoms3_has_fused_roll = False
+atoms3_last_timestamp_us = 0
+atoms3_has_last_timestamp = False
+atoms3_filtered_steer = 0.0
+
 # AtomS3 Telemetry State
 last_atoms3_ip = None
 last_atoms3_seq = 0
@@ -59,8 +66,8 @@ atoms3_hz_window_start = time.monotonic()
 atoms3_hz = 0
 
 # AtomS3 UDP Protocol Constants
-PACKET_MAGIC = 0x4552 # 'ER' in hex
-PACKET_FORMAT = "<HBBf" # uint16 magic (2B), uint8 seq (1B), uint8 restart (1B), float steer (4B) = 8 bytes
+PACKET_MAGIC = 0x4553 # 'ES' in hex
+PACKET_FORMAT = "<HBBI6f" # uint16 magic (2B), uint8 seq (1B), uint8 button (1B), uint32 timestamp_us (4B), 6 floats (24B) = 32 bytes
 PACKET_SIZE = struct.calcsize(PACKET_FORMAT)
 
 # Persistent State File
@@ -226,46 +233,82 @@ def compute_steer(ax, ay, az):
     global filtered_steer
     roll_rad = math.atan2(ax, math.sqrt(ay * ay + az * az))
     roll_deg = math.degrees(roll_rad)
+    cal_offset = float(state.get("calOffset", 0.0))
+    calibrated_roll = roll_deg - cal_offset
     max_tilt_deg = 28.0
-    raw = max(-1.0, min(1.0, roll_deg / max_tilt_deg))
-    if abs(raw) < 0.06:
+    raw = max(-1.0, min(1.0, calibrated_roll / max_tilt_deg))
+    if abs(raw) < 0.05:
         raw = 0.0
     filtered_steer += (raw - filtered_steer) * 0.35
     return filtered_steer
 
 def apply_calibration(raw_val):
-    cal = state.get("calOffset", 0.0)
-    sens = state.get("sensitivity", 1.0)
-    return max(-1.0, min(1.0, (raw_val - cal) * sens))
+    sens = float(state.get("sensitivity", 1.0))
+    return max(-1.0, min(1.0, raw_val * sens))
 
 class AtomS3UDPProtocol(asyncio.DatagramProtocol):
     def connection_made(self, transport):
         self.transport = transport
-        print("[OK] AtomS3 UDP receiver active for 8-byte ControllerPacket datagrams")
+        print("[OK] AtomS3 UDP receiver active for 32-byte ControllerPacket datagrams")
 
     def datagram_received(self, data, addr):
         global last_atoms3_time, last_restart_state, last_raw_steer
         global last_atoms3_ip, last_atoms3_seq, atoms3_pkt_count, atoms3_window_packets, atoms3_hz_window_start, atoms3_hz
-        if len(data) == PACKET_SIZE:
-            magic, seq, restart, steer = struct.unpack(PACKET_FORMAT, data)
+        global atoms3_fused_roll_deg, atoms3_has_fused_roll, atoms3_last_timestamp_us, atoms3_has_last_timestamp, atoms3_filtered_steer
+        if len(data) >= PACKET_SIZE:
+            magic, seq, button, ts_us, ax, ay, az, gx, gy, gz = struct.unpack(PACKET_FORMAT, data[:PACKET_SIZE])
             if magic == PACKET_MAGIC:
                 now = time.monotonic()
+                dt = 0.02
+                if atoms3_has_last_timestamp:
+                    diff_us = (ts_us - atoms3_last_timestamp_us) & 0xFFFFFFFF
+                    if 0 < diff_us < 1_000_000:
+                        dt = diff_us * 1e-6
+                atoms3_last_timestamp_us = ts_us
+                atoms3_has_last_timestamp = True
+                dt = max(0.005, min(0.05, dt))
+
+                # Accelerometer roll
+                denom = math.sqrt(ay * ay + az * az)
+                accel_roll_deg = math.degrees(math.atan2(ax, denom))
+
+                # Complementary filter: fuse gy (deg/s) and accel roll
+                if not atoms3_has_fused_roll or (now - last_atoms3_time) > 0.5:
+                    atoms3_fused_roll_deg = accel_roll_deg
+                    atoms3_has_fused_roll = True
+                else:
+                    atoms3_fused_roll_deg = 0.96 * (atoms3_fused_roll_deg + gy * dt) + 0.04 * accel_roll_deg
+
+                # Tare offset (state["calOffset"] in degrees)
+                cal_offset = float(state.get("calOffset", 0.0))
+                calibrated_roll = atoms3_fused_roll_deg - cal_offset
+
+                # Map to normalized steer
+                raw_steer = max(-1.0, min(1.0, calibrated_roll / 28.0))
+                if abs(raw_steer) < 0.05:
+                    raw_steer = 0.0
+
+                # Exponential smoothing
+                atoms3_filtered_steer += (raw_steer - atoms3_filtered_steer) * 0.35
+                last_raw_steer = atoms3_filtered_steer
+
+                # Apply sensitivity
+                sens = float(state.get("sensitivity", 1.0))
+                calibrated = max(-1.0, min(1.0, atoms3_filtered_steer * sens))
+
                 last_atoms3_time = now
-                last_raw_steer = steer
                 last_atoms3_ip = addr[0]
                 last_atoms3_seq = seq
                 atoms3_pkt_count += 1
                 atoms3_window_packets += 1
 
-                dt = now - atoms3_hz_window_start
-                if dt >= 1.0:
-                    atoms3_hz = round(atoms3_window_packets / dt)
+                dt_hz = now - atoms3_hz_window_start
+                if dt_hz >= 1.0:
+                    atoms3_hz = round(atoms3_window_packets / dt_hz)
                     atoms3_window_packets = 0
                     atoms3_hz_window_start = now
-                elif atoms3_hz == 0 and dt > 0.1:
-                    atoms3_hz = round(atoms3_window_packets / dt)
-
-                calibrated = apply_calibration(steer)
+                elif atoms3_hz == 0 and dt_hz > 0.1:
+                    atoms3_hz = round(atoms3_window_packets / dt_hz)
 
                 if connected_clients:
                     msg = json.dumps({
@@ -273,24 +316,34 @@ class AtomS3UDPProtocol(asyncio.DatagramProtocol):
                         "source": "atoms3",
                         "steer": round(calibrated, 3),
                         "rawSteer": round(last_raw_steer, 3),
-                        "calOffset": round(state.get("calOffset", 0.0), 3),
-                        "rollDeg": round(last_raw_steer * 28.0, 1),
+                        "calOffset": round(cal_offset, 2),
+                        "rollDeg": round(atoms3_fused_roll_deg, 1),
                         "seq": int(seq),
-                        "button": int(restart),
+                        "button": int(button),
                         "hz": int(atoms3_hz),
-                        "deviceIp": last_atoms3_ip
+                        "deviceIp": last_atoms3_ip,
+                        "accel": {
+                            "x": round(ax, 3),
+                            "y": round(ay, 3),
+                            "z": round(az, 3)
+                        },
+                        "gyro": {
+                            "x": round(gx, 2),
+                            "y": round(gy, 2),
+                            "z": round(gz, 2)
+                        }
                     })
                     websockets.broadcast(connected_clients, msg)
 
-                    # Edge-detect restart flag across repeated UDP packets
-                    if restart and not last_restart_state:
+                    # Edge-detect button flag across repeated UDP packets
+                    if button and not last_restart_state:
                         btn_msg = json.dumps({
                             "type": "button",
                             "action": "start_or_restart"
                         })
                         websockets.broadcast(connected_clients, btn_msg)
 
-                last_restart_state = restart
+                last_restart_state = button
 
 async def sensor_loop():
     global filtered_steer, last_raw_steer, atoms3_hz
@@ -341,7 +394,7 @@ async def sensor_loop():
         await asyncio.sleep(0.02) # 50 Hz sensor sampling
 
 async def handle_client(websocket):
-    global last_raw_steer
+    global last_raw_steer, atoms3_filtered_steer
     remote_addr = getattr(websocket, "remote_address", "client")
     print(f"[OK] Client connected: {remote_addr}")
     connected_clients.add(websocket)
@@ -384,16 +437,17 @@ async def handle_client(websocket):
 
                 elif mtype == "calibrate":
                     # Zero / Tare balance board at current raw tilt angle
-                    state["calOffset"] = round(max(-0.8, min(0.8, last_raw_steer)), 3)
+                    state["calOffset"] = round(atoms3_fused_roll_deg if atoms3_has_fused_roll else (last_raw_steer * 28.0), 2)
+                    atoms3_filtered_steer = 0.0
                     save_state()
                     broadcast_room_state()
-                    print(f"[CALIBRATE] Balance board zero set to offset {state['calOffset']:.3f}")
+                    print(f"[CALIBRATE] Balance board zero set to offset {state['calOffset']:.2f}°")
 
                 elif mtype == "reset_calibration":
                     state["calOffset"] = 0.0
                     save_state()
                     broadcast_room_state()
-                    print("[CALIBRATE] Balance board calibration reset to 0.0")
+                    print("[CALIBRATE] Balance board calibration reset to 0.0°")
 
                 elif mtype == "command":
                     action = msg.get("action")

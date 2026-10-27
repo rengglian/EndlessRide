@@ -78,4 +78,4 @@ src/
 
 *   **Raspberry Pi 4**: Native hardware acceleration via Chromium Mesa V3D driver.
 *   **I2C Accelerometer Bridge** (`scripts/sensor_bridge.py`): Samples MPU-6050 / ADXL345 at $50\text{ Hz}$ on GPIO pins 3 (SDA) and 5 (SCL), computing low-pass filtered roll angles.
-*   **M5Stack AtomS3 (C126)** ([`scripts/m5stack_atoms3_reins/m5stack_atoms3_reins.ino`](file:///home/rengglian/repos/EndlessRide/scripts/m5stack_atoms3_reins/m5stack_atoms3_reins.ino)): Wireless ESP32-S3 with built-in Bosch BMI270 6-axis IMU, captive portal setup & runtime target IP web config, 8-byte binary UDP packet streaming, live steering meter on $128 \times 128$ color LCD, and push-button restart.
+*   **M5Stack AtomS3 (C126)** ([`scripts/m5stack_atoms3_reins/m5stack_atoms3_reins.ino`](file:///home/rengglian/repos/EndlessRide/scripts/m5stack_atoms3_reins/m5stack_atoms3_reins.ino)): Wireless ESP32-S3 with built-in Bosch BMI270 6-axis IMU, captive portal setup & runtime target IP web config, 100 Hz 32-byte raw IMU binary UDP streaming (`0x4553`), live steering meter on $128 \times 128$ color LCD, and push-button restart.

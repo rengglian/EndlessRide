@@ -10,10 +10,9 @@ namespace EndlessRide.Networking;
 
 /// <summary>
 /// Asynchronous UDP listener for M5Stack AtomS3 hardware tilt reins and balance boards.
-/// Listens on port 8081 for 8-byte binary datagrams:
-/// [magic: uint16 (0x4552), seq: uint8, restart: uint8, steer: float32]
-/// Applies tare calibration and 250ms staleness safety guard.
-/// Ported from scripts/sensor_bridge.py.
+/// Listens on port 8080/8081 for 32-byte binary datagrams:
+/// [magic: uint16 (0x4553), seq: uint8, button: uint8, timestamp_us: uint32, ax, ay, az, gx, gy, gz: float32 x 6]
+/// Applies host-side 6-axis sensor fusion, tare calibration, and staleness safety guard.
 /// </summary>
 public partial class HardwareUdpReceiver : Node
 {
@@ -33,6 +32,11 @@ public partial class HardwareUdpReceiver : Node
     public byte Button { get; private set; }
     public int Hz { get; private set; }
 
+    public Vector3 RawAccel { get; private set; }
+    public Vector3 RawGyro { get; private set; }
+    public uint TimestampUs { get; private set; }
+    public float FusedRollDeg => _fusedRollDeg;
+
     public event Action? OnRestartRequested;
 
     private UdpClient? _udpClientPrimary;
@@ -43,7 +47,13 @@ public partial class HardwareUdpReceiver : Node
     private int _hzPacketCounter;
     private ulong _hzWindowStartTimeMs;
 
-    private const ushort PacketMagic = 0x4552; // 'ER' in hex
+    private float _fusedRollDeg;
+    private bool _hasFusedRoll;
+    private uint _lastTimestampUs;
+    private bool _hasLastTimestamp;
+    private float _filteredSteer;
+
+    private const ushort PacketMagic = 0x4553; // 'ES' in hex
 
     public override void _Ready()
     {
@@ -110,42 +120,101 @@ public partial class HardwareUdpReceiver : Node
 
     private void ProcessPacket(byte[] data, IPEndPoint remoteEndPoint)
     {
-        if (data.Length < 8) return;
+        if (data.Length < 32) return;
 
-        // Little-endian unpack: [H (ushort), B (byte), B (byte), f (float)]
+        // Little-endian unpack: [magic: uint16 (0x4553), seq: uint8, button: uint8, timestamp_us: uint32, 6x float32]
         ushort magic = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(0, 2));
         if (magic != PacketMagic) return;
 
         byte seq = data[2];
-        byte restart = data[3];
-        float steer = BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(4, 4));
-        if (!float.IsFinite(steer)) return;
-        if (InvertX)
+        byte button = data[3];
+
+        uint timestampUs = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4, 4));
+        float ax = BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(8, 4));
+        float ay = BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(12, 4));
+        float az = BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(16, 4));
+        float gx = BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(20, 4));
+        float gy = BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(24, 4));
+        float gz = BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(28, 4));
+
+        if (!float.IsFinite(ax) || !float.IsFinite(ay) || !float.IsFinite(az) ||
+            !float.IsFinite(gx) || !float.IsFinite(gy) || !float.IsFinite(gz))
         {
-            steer = -steer;
+            return;
         }
 
-        RawSteer = steer;
-        CalibratedSteer = Math.Clamp((steer - CalOffset) * Sensitivity, -1.0f, 1.0f);
+        RawAccel = new Vector3(ax, ay, az);
+        RawGyro = new Vector3(gx, gy, gz);
+        TimestampUs = timestampUs;
         Seq = seq;
-        Button = restart;
+        Button = button;
 
         ulong now = Time.GetTicksMsec();
+
+        // 1. Compute dt
+        float dt = 0.02f;
+        if (_hasLastTimestamp)
+        {
+            uint diffUs = timestampUs - _lastTimestampUs;
+            if (diffUs > 0 && diffUs < 1_000_000)
+            {
+                dt = diffUs * 1e-6f;
+            }
+        }
+        _lastTimestampUs = timestampUs;
+        _hasLastTimestamp = true;
+        dt = Math.Clamp(dt, 0.005f, 0.05f);
+
+        // 2. Accelerometer roll
+        float accelRollRad = MathF.Atan2(ax, MathF.Sqrt(ay * ay + az * az));
+        float accelRollDeg = accelRollRad * (180.0f / MathF.PI);
+
+        // 3. Complementary filter with gy (Y-axis gyro in deg/s)
+        if (!_hasFusedRoll || (now - _lastPacketTimeMs) > 500)
+        {
+            _fusedRollDeg = accelRollDeg;
+            _hasFusedRoll = true;
+        }
+        else
+        {
+            _fusedRollDeg = 0.96f * (_fusedRollDeg + gy * dt) + 0.04f * accelRollDeg;
+        }
+
+        // 4. Tare offset
+        float calibratedRoll = _fusedRollDeg - CalOffset;
+
+        // 5. Map to normalized steer
+        float rawSteer = Math.Clamp(calibratedRoll / 28.0f, -1.0f, 1.0f);
+
+        // 6. Center deadzone
+        if (MathF.Abs(rawSteer) < 0.05f)
+        {
+            rawSteer = 0.0f;
+        }
+
+        // 7. Exponential smoothing
+        _filteredSteer += (rawSteer - _filteredSteer) * 0.35f;
+
+        // 8. InvertX and Sensitivity
+        float steer = InvertX ? -_filteredSteer : _filteredSteer;
+        RawSteer = steer;
+        CalibratedSteer = Math.Clamp(steer * Sensitivity, -1.0f, 1.0f);
+
         _lastPacketTimeMs = now;
         PacketCount++;
         DeviceIp = remoteEndPoint.Address.ToString();
 
         if (PacketCount == 1)
         {
-            GD.Print($"[HardwareUdpReceiver] First packet received from {DeviceIp} on port (magic=0x{magic:X4}, seq={seq}, steer={steer:F2}, restart={restart})");
+            GD.Print($"[HardwareUdpReceiver] First packet received from {DeviceIp} (magic=0x{magic:X4}, seq={seq}, button={button}, ax={ax:F2}, ay={ay:F2}, az={az:F2}, gy={gy:F2})");
         }
 
         // Calculate rolling Hz
         _hzPacketCounter++;
-        ulong dt = now - _hzWindowStartTimeMs;
-        if (dt >= 1000)
+        ulong dtHz = now - _hzWindowStartTimeMs;
+        if (dtHz >= 1000)
         {
-            Hz = (int)Math.Round(_hzPacketCounter * 1000.0 / dt);
+            Hz = (int)Math.Round(_hzPacketCounter * 1000.0 / dtHz);
             _hzPacketCounter = 0;
             _hzWindowStartTimeMs = now;
         }
@@ -154,25 +223,31 @@ public partial class HardwareUdpReceiver : Node
             Hz = 50;
         }
 
-        bool currentRestart = restart > 0;
+        // Button edge-detection for OnRestartRequested
+        bool currentRestart = button > 0;
         if (currentRestart && !_lastRestartState)
         {
             IsRestartPressed = true;
             OnRestartRequested?.Invoke();
+        }
+        else if (!currentRestart)
+        {
+            IsRestartPressed = false;
         }
         _lastRestartState = currentRestart;
     }
 
     public void TareZero()
     {
-        CalOffset = Math.Clamp(RawSteer, -0.8f, 0.8f);
-        GD.Print($"[HardwareUdpReceiver] Tare zero calibrated: offset = {CalOffset:F3}");
+        CalOffset = _fusedRollDeg;
+        _filteredSteer = 0.0f;
+        GD.Print($"[HardwareUdpReceiver] Tare zero calibrated: offset = {CalOffset:F2}°");
     }
 
     public void ResetCalibration()
     {
         CalOffset = 0.0f;
-        GD.Print("[HardwareUdpReceiver] Calibration reset to 0.0");
+        GD.Print("[HardwareUdpReceiver] Calibration reset to 0.0°");
     }
 
     public void StopListening()

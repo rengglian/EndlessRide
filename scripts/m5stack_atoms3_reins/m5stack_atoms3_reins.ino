@@ -18,22 +18,32 @@ const uint16_t udpPort = 8080;
 IPAddress piIP;
 bool configMode = false;
 
-// Binary packet structure
+// Binary packet structure (32 bytes total)
 #pragma pack(push, 1)
 struct ControllerPacket {
-  uint16_t magic;    // 2 bytes: Identifier 0x4552 ('E', 'R' for Endless Ride)
-  uint8_t  seq;      // 1 byte:  Rolling sequence counter (0-255)
-  uint8_t  restart;  // 1 byte:  Button action flag (0 or 1)
-  float    steer;    // 4 bytes: IEEE 754 float (-1.0 to 1.0)
+  uint16_t magic;        // 2 bytes: Identifier 0x4553 ('E', 'S' for Endless Ride Sensor, little-endian 0x53, 0x45)
+  uint8_t  seq;          // 1 byte:  Rolling sequence counter (0-255)
+  uint8_t  button;       // 1 byte:  Button action flag (1 if restart pressed, 0 otherwise)
+  uint32_t timestamp_us; // 4 bytes: Microsecond timestamp from micros()
+  float    ax;           // 4 bytes: Accelerometer X in g (IEEE 754 float)
+  float    ay;           // 4 bytes: Accelerometer Y in g (IEEE 754 float)
+  float    az;           // 4 bytes: Accelerometer Z in g (IEEE 754 float)
+  float    gx;           // 4 bytes: Gyroscope X in deg/s (IEEE 754 float)
+  float    gy;           // 4 bytes: Gyroscope Y in deg/s (IEEE 754 float)
+  float    gz;           // 4 bytes: Gyroscope Z in deg/s (IEEE 754 float)
 };
 #pragma pack(pop)
+static_assert(sizeof(ControllerPacket) == 32, "ControllerPacket must be exactly 32 bytes");
 
-const uint16_t PACKET_MAGIC = 0x4552; // 'ER' in hex
+const uint16_t PACKET_MAGIC = 0x4553; // 'ES' in hex
 uint8_t packetSeq = 0;
 
 float rollOffsetDeg = 0.0f;
+float pitchOffsetDeg = 0.0f;
 float fusedRollDeg = 0.0f;
+float fusedPitchDeg = 0.0f;
 float filteredSteer = 0.0f;
+float filteredPitch = 0.0f;
 unsigned long lastSampleTime = 0;
 unsigned long lastWifiCheckTime = 0;
 unsigned long btnPressStartTime = 0;
@@ -108,34 +118,41 @@ void startCaptivePortal() {
   server.begin();
 }
 
-void drawUI(float steer) {
+void drawUI(float steer, float pitch) {
   canvas.fillSprite(TFT_BLACK);
   canvas.setTextSize(1);
   canvas.setTextColor(TFT_CYAN);
-  canvas.drawString("ENDLESS RIDE (UDP)", 4, 6);
+  canvas.drawString("ENDLESS RIDE", 6, 6);
 
-  // Steering deflection bar
-  int midX = 64, barY = 46, barHeight = 16;
-  int barWidth = (int)(steer * 50.0f);
-  canvas.drawRect(12, barY - 2, 104, barHeight + 4, TFT_DARKGREY);
-  canvas.drawFastVLine(midX, barY - 4, barHeight + 8, TFT_WHITE);
+  // 2D Gimbal / Crosshair Box (56x56 px, centered at X=64, Y=48)
+  const int boxX = 36, boxY = 20, boxSize = 56;
+  const int cx = 64, cy = 48;
+  const int range = 24;
 
-  if (barWidth < 0) {
-    canvas.fillRect(midX + barWidth, barY, -barWidth, barHeight, TFT_CYAN);
-  } else if (barWidth > 0) {
-    canvas.fillRect(midX, barY, barWidth, barHeight, TFT_CYAN);
-  }
+  canvas.drawRect(boxX, boxY, boxSize, boxSize, TFT_DARKGREY);
+  canvas.drawFastHLine(boxX + 3, cy, boxSize - 6, TFT_DARKGREY);
+  canvas.drawFastVLine(cx, boxY + 3, boxSize - 6, TFT_DARKGREY);
+  canvas.drawCircle(cx, cy, 3, TFT_DARKGREY);
 
-  // Steer readout
+  // Position indicator dot (X = steering roll, Y = rein pitch: pull back/upwards = dot up)
+  int dotX = cx + (int)(steer * range);
+  int dotY = cy - (int)(pitch * range);
+  dotX = constrain(dotX, boxX + 4, boxX + boxSize - 5);
+  dotY = constrain(dotY, boxY + 4, boxY + boxSize - 5);
+
+  canvas.fillCircle(dotX, dotY, 4, TFT_CYAN);
+  canvas.drawCircle(dotX, dotY, 4, TFT_WHITE);
+
+  // Numeric deflection readouts
   canvas.setTextColor(TFT_WHITE);
-  canvas.setCursor(16, 70);
-  canvas.printf("STEER: %+.2f", steer);
+  canvas.setCursor(6, 82);
+  canvas.printf("S:%+.2f   P:%+.2f", steer, pitch);
 
   // Connection info footer
   canvas.setTextColor(TFT_LIGHTGREY);
-  canvas.setCursor(4, 94);
-  canvas.printf("My IP: %s", WiFi.localIP().toString().c_str());
-  canvas.setCursor(4, 110);
+  canvas.setCursor(4, 98);
+  canvas.printf("IP: %s", WiFi.localIP().toString().c_str());
+  canvas.setCursor(4, 112);
   canvas.printf("Target: %s", piIP.toString().c_str());
 
   canvas.pushSprite(0, 0);
@@ -167,6 +184,7 @@ void setup() {
   String savedPass = prefs.getString("pass", "");
   String savedPiIP = prefs.getString("pi_ip", "");
   rollOffsetDeg    = prefs.getFloat("roll_offset", 0.0f);
+  pitchOffsetDeg   = prefs.getFloat("pitch_offset", 0.0f);
   prefs.end();
 
   // Validate credentials and IP address
@@ -268,8 +286,10 @@ void loop() {
     if (!isCalibrating && (now - btnPressStartTime >= 1200)) {
       isCalibrating = true;
       rollOffsetDeg = fusedRollDeg;
+      pitchOffsetDeg = fusedPitchDeg;
       prefs.begin("wifi-config", false);
       prefs.putFloat("roll_offset", rollOffsetDeg);
+      prefs.putFloat("pitch_offset", pitchOffsetDeg);
       prefs.end();
 
       canvas.fillSprite(TFT_BLACK);
@@ -281,12 +301,12 @@ void loop() {
   }
   if (M5.BtnA.wasReleased()) {
     if (!isCalibrating) {
-      restartPacketsRemaining = 4;
+      restartPacketsRemaining = 8; // ~80ms at 100 Hz
     }
     isCalibrating = false;
   }
 
-  if (now - lastSampleTime >= 20) { // 50 Hz loop
+  if (now - lastSampleTime >= 10) { // 100 Hz sampling and streaming loop (10ms)
     float dt = (now - lastSampleTime) * 0.001f;
     lastSampleTime = now;
 
@@ -295,43 +315,53 @@ void loop() {
     M5.Imu.getAccel(&ax, &ay, &az);
     M5.Imu.getGyro(&gx, &gy, &gz);
 
-    float accelRollRad = atan2(ax, sqrt(ay * ay + az * az));
-    float accelRollDeg = accelRollRad * 180.0f / PI;
-
-    // Gyroscope roll rate around Y axis (in deg/s)
-    float gyroRollRate = gy;
-
-    // Complementary filter: fuse gyroscope and accelerometer
-    fusedRollDeg = 0.96f * (fusedRollDeg + gyroRollRate * dt) + 0.04f * accelRollDeg;
-
-    // Subtract calibrated roll offset
-    float calibratedRoll = fusedRollDeg - rollOffsetDeg;
-
-    float rawSteer = constrain(calibratedRoll / 28.0f, -1.0f, 1.0f);
-    if (fabsf(rawSteer) < 0.05f) rawSteer = 0.0f;
-
-    filteredSteer += (rawSteer - filteredSteer) * 0.35f;
-
     uint8_t restartFlag = 0;
     if (restartPacketsRemaining > 0) {
       restartFlag = 1;
       restartPacketsRemaining--;
     }
 
+    // 32-byte binary UDP packet with raw 6-axis IMU data
     ControllerPacket pkt;
-    pkt.magic   = PACKET_MAGIC;
-    pkt.seq     = packetSeq++;
-    pkt.restart = restartFlag;
-    pkt.steer   = filteredSteer;
+    pkt.magic        = PACKET_MAGIC;
+    pkt.seq          = packetSeq++;
+    pkt.button       = restartFlag;
+    pkt.timestamp_us = micros();
+    pkt.ax           = ax;
+    pkt.ay           = ay;
+    pkt.az           = az;
+    pkt.gx           = gx;
+    pkt.gy           = gy;
+    pkt.gz           = gz;
 
     udp.beginPacket(piIP, udpPort);
-    udp.write((uint8_t*)&pkt, sizeof(pkt));
+    udp.write((const uint8_t*)&pkt, sizeof(pkt));
     udp.endPacket();
 
+    // Local roll (steering) estimation solely for on-device 128x128 LCD UI gimbal
+    float accelRollRad = atan2(ax, sqrt(ay * ay + az * az));
+    float accelRollDeg = accelRollRad * 180.0f / PI;
+    float gyroRollRate = gy; // Y-axis gyro in deg/s
+    fusedRollDeg = 0.98f * (fusedRollDeg + gyroRollRate * dt) + 0.02f * accelRollDeg;
+    float calibratedRoll = fusedRollDeg - rollOffsetDeg;
+    float rawSteer = constrain(calibratedRoll / 28.0f, -1.0f, 1.0f);
+    if (fabsf(rawSteer) < 0.05f) rawSteer = 0.0f;
+    filteredSteer += (rawSteer - filteredSteer) * 0.35f;
+
+    // Local pitch (reins pull/slack) estimation solely for on-device 128x128 LCD UI gimbal
+    float accelPitchRad = atan2(ay, sqrt(ax * ax + az * az));
+    float accelPitchDeg = accelPitchRad * 180.0f / PI;
+    float gyroPitchRate = gx; // X-axis gyro in deg/s
+    fusedPitchDeg = 0.98f * (fusedPitchDeg + gyroPitchRate * dt) + 0.02f * accelPitchDeg;
+    float calibratedPitch = fusedPitchDeg - pitchOffsetDeg;
+    float rawPitch = constrain(calibratedPitch / 28.0f, -1.0f, 1.0f);
+    if (fabsf(rawPitch) < 0.05f) rawPitch = 0.0f;
+    filteredPitch += (rawPitch - filteredPitch) * 0.35f;
+
     static int screenCounter = 0;
-    if (++screenCounter >= 5) { // ~10 FPS UI updates
+    if (++screenCounter >= 10) { // ~10 FPS UI updates (every 100ms)
       screenCounter = 0;
-      drawUI(filteredSteer);
+      drawUI(filteredSteer, filteredPitch);
     }
   }
 }

@@ -13,7 +13,7 @@ The Godot engine runs as the standalone central console hub, handling rendering,
                          │         M5Stack AtomS3         │
                          │   (Wireless IMU Motion Reins)  │
                          └──────────────┬─────────────────┘
-                                        │ Wi-Fi UDP (Binary packets @ 50 Hz, Port 8081)
+                                        │ Wi-Fi UDP (32-byte raw IMU packets @ 100 Hz, Port 8080 / 8081)
                                         ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                        NVIDIA SHIELD TV / LINUX DESKTOP                                │
@@ -23,7 +23,7 @@ The Godot engine runs as the standalone central console hub, handling rendering,
 │  │                                                                                  │  │
 │  │  ┌───────────────────────┐  ┌───────────────────────┐  ┌──────────────────────┐  │  │
 │  │  │  Hardware UDP Listener│  │ Embedded Web Server   │  │  Save State / Config │  │  │
-│  │  │  (Port 8081 - AtomS3) │  │  (Port 8080 - HTTP/WS)│  │  (user://leaderboard)│  │  │
+│  │  │(Port 8080/8081 AtomS3)│  │  (Port 8080 - HTTP/WS)│  │  (user://leaderboard)│  │  │
 │  │  └──────────┬────────────┘  └───────────┬───────────┘  └──────────────────────┘  │  │
 │  │             │                           │                                        │  │
 │  │             └─────────────┬─────────────┘                                        │  │
@@ -58,7 +58,7 @@ The engine seamlessly samples inputs across four simultaneous sources with zero 
 | :--- | :--- | :--- | :--- | :--- |
 | **Keyboard** | `A` / `D` or `Left` / `Right` Arrows | `Space` / `Enter` | `P` / `Esc` | Instant desktop fallback |
 | **Gamepad / Shield Controller** | Left Thumbstick (X-axis) / D-Pad | `A` / `Cross` Button | `Start` / `Menu` | Configured via Godot JoyAxis mapping |
-| **M5Stack AtomS3 (Physical Motion)** | Hardware roll tilt (Bosch BMI270) | Screen tap / Button | N/A | Low-latency binary UDP @ 50 Hz (:8081) |
+| **M5Stack AtomS3 (Physical Motion)** | Hardware roll tilt (Bosch BMI270 raw 6-axis IMU) | Screen tap / Button | N/A | Low-latency 32-byte binary UDP @ 100 Hz (:8080 / :8081) |
 | **Smartphone Companion Web App** | Virtual touch joystick / phone tilt | On-screen tap | N/A | Served directly by Godot on port 8080 |
 
 ### Lateral Physics & Smoothing
@@ -133,13 +133,17 @@ All obstacles feature strong silhouettes and warning colors for split-second rea
 ## 5. Network Subsystems
 
 ### 5.1 Hardware UDP Receiver (`HardwareUdpReceiver.cs`)
-- Binds to UDP port `8081`.
-- Receives 8-byte binary packets from the M5Stack AtomS3:
-  - Header byte: `0xAA`
-  - Roll angle: `int16` (scaled by $100.0$)
-  - Pitch angle: `int16` (scaled by $100.0$)
-  - Checksum: XOR validation byte
-- Automatically zero-tares neutral position and maps tilt smoothly to $[-1.0, +1.0]$ steering.
+- Binds to UDP port `8080` (primary) and `8081` (alternate fallback).
+- Receives 32-byte raw 6-axis IMU binary datagrams (`0x4553` / `'ES'`) at 100 Hz:
+  - Magic identifier: `0x4553` (2 bytes, little-endian)
+  - Packet sequence: `seq` (1 byte, rolling 0..255)
+  - Button state: `button` (1 byte, 1 if restart pressed)
+  - Hardware timestamp: `timestamp_us` (4 bytes, ESP32 `micros()`)
+  - 3-axis linear acceleration: `ax`, `ay`, `az` (float32 in $g$)
+  - 3-axis angular rates: `gx`, `gy`, `gz` (float32 in $^\circ/\text{s}$)
+- Host-side sensor fusion: Integrates angular rate ($g_y$) and accelerometer vector with a complementary filter ($0.96 \cdot \text{gyro} + 0.04 \cdot \text{accel}$) utilizing exact microsecond $\Delta t$.
+- Dynamic zero-tare offset (`CalOffset`), comfort tilt range ($28^\circ$), center deadzone ($0.05$), and exponential smoothing ($0.35$).
+- Architecture ready: full 6-axis data is exposed to game logic for pitch speed modulation and jerk jump gestures without firmware updates.
 
 ### 5.2 Embedded Companion Web Server (`CompanionWebServer.cs`)
 - Asynchronous HTTP and WebSocket server running on port `8080`.
@@ -178,7 +182,7 @@ godot/
 │   │   └── HorseRunnerController.cs # Locomotion, lateral physics, 4-point suspension & reins
 │   ├── Networking/
 │   │   ├── CompanionWebServer.cs # Port 8080 HTTP & WebSocket companion server
-│   │   └── HardwareUdpReceiver.cs# Port 8081 binary UDP AtomS3 listener
+│   │   └── HardwareUdpReceiver.cs# Port 8080/8081 32-byte binary UDP AtomS3 listener
 │   ├── Obstacles/
 │   │   ├── ObstacleEntity.cs     # Obstacle bounds & lane coordinates
 │   │   ├── ObstacleManager.cs    # Swept interval collision check

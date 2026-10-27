@@ -27,7 +27,7 @@ The game accepts lateral steering intent $u_{\text{in}} \in [-1.0, 1.0]$ across 
 *   Reads MPU-6050 / ADXL345 tilt angles at $50\text{ Hz}$ with low-pass exponential smoothing.
 
 ### 4. Wireless ESP32 / M5Stack AtomS3 (C126) Controller
-*   Onboard Bosch BMI270 IMU samples roll angle at $50\text{ Hz}$ and transmits 8-byte packed binary UDP datagrams (`[0x4552, seq, rst, steer]`) to port `8080`.
+*   Onboard Bosch BMI270 IMU samples raw 6-axis motion at $100\text{ Hz}$ and transmits 32-byte binary UDP datagrams (`[0x4553, seq, btn, us, ax, ay, az, gx, gy, gz]`) to port `8080`.
 *   Configured easily via captive portal (`AtomS3-Setup` AP at `192.168.4.1`) or runtime HTTP dashboard (`http://<atom_ip>/set_target`).
 *   The host bridge (`scripts/sensor_bridge.py`) relays incoming UDP datagrams to browser clients connected via WebSocket (`ws://<host>:8080`).
 *   Physical screen push-button triggers instant game restart events (`{"type": "button", "action": "restart"}`).

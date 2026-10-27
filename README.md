@@ -52,7 +52,7 @@ A high-performance, mobile- and TV-optimized 3D endless horse runner game availa
   - LocalStorage High Score persistence with "New Record!" banner on Game Over.
 
 - **Physical Hardware Motion Controllers**:
-  - Wireless ESP32-S3 `M5Stack AtomS3` rein motion controller streaming 50 Hz binary UDP packets with BMI270 complementary gyro+accel filtering, long-press `BtnA` zero calibration (saved to NVS), and 4x UDP restart packet redundancy.
+  - Wireless ESP32-S3 `M5Stack AtomS3` rein motion controller streaming 100 Hz 32-byte raw 6-axis IMU binary UDP packets (`0x4553`) with host-side complementary gyro+accel filtering, dynamic zero calibration, and 4x UDP restart packet redundancy.
   - Opt-in WebSocket gateway (`?sensor=<host-ip>`) with 350ms staleness safety guard.
   - Native Gamepad API support (Left Stick / D-Pad).
 
@@ -61,7 +61,7 @@ A high-performance, mobile- and TV-optimized 3D endless horse runner game availa
   - Built-in HTTP server directly serving the compiled 3D game and mobile **Companion Remote App** (`public/remote.html`) on port 8080.
   - Real-time Balance Board **Tare / Zero neutral** calibration and sensitivity tuning with live Bubble Level visual tilt feedback.
   - Persistent room state and Top-10 Leaderboard (`scripts/leaderboard.json`) with active rider profiles and difficulty presets.
-  - **Docker & Compose Deployment**: Multi-stage build (`node:20-alpine` builder + `python:3.11-slim` runtime) hosting the full 3D game bundle, smartphone remote (`/remote`), WebSocket hub, 50 Hz UDP receiver, and volume-mounted persistent data (`./data/leaderboard.json`) on port 8080.
+  - **Docker & Compose Deployment**: Multi-stage build (`node:20-alpine` builder + `python:3.11-slim` runtime) hosting the full 3D game bundle, smartphone remote (`/remote`), WebSocket hub, 100 Hz AtomS3 raw IMU UDP receiver, and volume-mounted persistent data (`./data/leaderboard.json`) on port 8080.
 
 ---
 
@@ -153,7 +153,7 @@ Endless Ride features native support for physical tilt motion controllers, trans
 |   M5Stack AtomS3         |  WiFi    |   Headless Raspberry Pi |  Local   |   Living Room TV / PC   |
 |   (ESP32-S3 + BMI270)    |  UDP     |   scripts/              |  Web-    |   (NVIDIA Shield / TV)  |
 |   Tilt Reins / Board     | -------->|   sensor_bridge.py      | -------->|   Endless Ride WebGL    |
-|   (8-byte binary UDP)    | :8080    |   Game & Sensor Hub     | Socket   |   (?sensor=<pi-ip>)     |
+|   (32-byte binary UDP)   | :8080    |   Game & Sensor Hub     | Socket   |   (?sensor=<pi-ip>)     |
 +--------------------------+          +-------------------------+          +-------------------------+
                                               |           ^
 +--------------------------+                  |           | WebSocket
@@ -171,11 +171,13 @@ Endless Ride features native support for physical tilt motion controllers, trans
 
 ### Option A: M5Stack AtomS3 Wireless Rein Controller
 
-The `scripts/m5stack_atoms3_reins/` sketch turns an ultra-compact **M5Stack AtomS3** (ESP32-S3 with built-in Bosch BMI270 IMU and 128x128 color LCD) into wireless horse reins.
+The `scripts/m5stack_atoms3_reins/` sketch turns an ultra-compact **M5Stack AtomS3** (ESP32-S3 with built-in Bosch BMI270 IMU and 128x128 color LCD) into wireless horse reins streaming 32-byte raw 6-axis IMU datagrams (`0x4553`) at 100 Hz.
 
-- **Complementary Gyro + Accel Filter**: Fuses BMI270 gyroscope and accelerometer data to eliminate linear acceleration spikes when shaking reins.
-- **Zero Neutral Calibration**: Press and hold the front LCD screen button (`BtnA`) for > 1.5 seconds to zero the neutral roll angle. Stored permanently in ESP32 NVS (`Preferences`).
-- **4x UDP Restart Redundancy**: Broadcasts restart button state across 4 consecutive packets with sequence numbering to guarantee restart detection over wireless UDP.
+- **Raw 6-Axis Streaming Architecture**: Streams uncompressed linear acceleration ($a_x, a_y, a_z$) and angular rate ($g_x, g_y, g_z$) with hardware microsecond timestamps (`micros()`) directly to UDP port 8080.
+- **Host-Side Sensor Fusion**: Fuses gyroscope and accelerometer readings host-side using a complementary filter (`0.96 * gyro + 0.04 * accel`), eliminating microcontroller compute bottlenecks while allowing live dynamic tuning.
+- **Future-Proof Mechanics Ready**: Raw 6-axis data enables upcoming gesture mechanics (pitch tilting for braking/aerodynamic sprint tuck, high-jerk upward whip snaps for hurdle jumps) without requiring firmware re-flashing.
+- **Zero Neutral Calibration & Tare**: Press and hold front LCD screen button (`BtnA`) or tap Tare on the companion remote to instantly calibrate neutral resting posture.
+- **4x UDP Restart Redundancy**: Broadcasts restart button state across consecutive packets with sequence numbering to guarantee restart detection over wireless UDP.
 - **Automatic Wi-Fi Reconnect**: Automatically checks `WiFi.status()` in `loop()` and reconnects if the access point drops.
 - **Captive Portal Wi-Fi Provisioning**: If unconfigured or Wi-Fi fails, creates an access point `AtomS3-Setup` at `192.168.4.1` with a mobile-friendly setup page.
 - **Runtime Target IP Configuration**: Access `http://<atoms3-ip>/` in any browser on the local network to re-point the UDP destination IP without restarting.
@@ -184,7 +186,7 @@ The `scripts/m5stack_atoms3_reins/` sketch turns an ultra-compact **M5Stack Atom
 
 The Python hub (`scripts/sensor_bridge.py`) serves as the central orchestration hub for arcade and living room TV installations (e.g., NVIDIA Shield TV, Android TV, or mini PC connected to a television):
 
-1. **Multi-Input Sensor Bridge**: Concurrently ingests wired I2C MPU-6050 balance board accelerometer readings (`/dev/i2c-1`) and wireless M5Stack AtomS3 50 Hz UDP datagrams (`0x4552`) on port 8080.
+1. **Multi-Input Sensor Bridge**: Concurrently ingests wired I2C MPU-6050 balance board accelerometer readings (`/dev/i2c-1`) and wireless M5Stack AtomS3 100 Hz raw IMU UDP datagrams (`0x4553`) on port 8080.
 2. **Dual WebSocket & HTTP Server**: Simultaneously coordinates real-time bidirectional WebSocket telemetry with game clients and serves the Smartphone Companion Remote (`public/remote.html`) directly over HTTP at `http://<pi-ip>:8080/remote` or `/remote.html`.
 3. **Dynamic Balance Board Tare / Zero Calibration**: Players can mount the physical balance board and tap **Zero / Tare** on their phone to offset the neutral resting position. Calibrated steering is computed as $\text{steer} = \text{clamp}((\text{rawSteer} - \text{calOffset}) \cdot \text{sensitivity}, -1.0, 1.0)$.
 4. **Persistent Room State & Leaderboard**: Stores and broadcasts room configurations (`playerName`, `difficulty`, `sensitivity`, `calOffset`) and a persistent Top-10 Leaderboard in `scripts/leaderboard.json`.
@@ -225,7 +227,7 @@ A built-in **350ms staleness timeout** ensures steering automatically resets to 
 
 ## 🐳 Docker Deployment (Raspberry Pi / Home Server)
 
-Endless Ride includes a production-ready **multi-stage Docker build** and `docker-compose.yml` that packages the entire stack—the compiled 3D WebGL game (`dist/`), the Smartphone Companion Remote (`/remote`), the WebSocket room & telemetry hub, and the 50 Hz AtomS3 UDP receiver—into a single container on port `8080`.
+Endless Ride includes a production-ready **multi-stage Docker build** and `docker-compose.yml` that packages the entire stack—the compiled 3D WebGL game (`dist/`), the Smartphone Companion Remote (`/remote`), the WebSocket room & telemetry hub, and the 100 Hz AtomS3 raw IMU UDP receiver—into a single container on port `8080`.
 
 ### 1. Start with Docker Compose
 
@@ -248,7 +250,7 @@ Once the container is running:
 | :--- | :--- | :--- |
 | **TV / NVIDIA Shield / PC** | Main 3D WebGL Game | `http://<pi-ip>:8080/` |
 | **Smartphone** | Companion Remote & Leaderboard | `http://<pi-ip>:8080/remote` |
-| **M5Stack AtomS3 Reins** | Wireless UDP Tilt Controller | Destination IP: `<pi-ip>`, Port: `8080` (UDP) |
+| **M5Stack AtomS3 Reins** | Wireless UDP Tilt Controller | Destination IP: `<pi-ip>`, Port: `8080` (UDP, 100 Hz raw IMU) |
 
 > **Note**: Both the browser game and the smartphone remote automatically connect to the local hub over WebSocket at `ws://<pi-ip>:8080`.
 
